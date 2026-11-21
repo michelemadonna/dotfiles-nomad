@@ -1,3 +1,6 @@
+# >>> lig pre >>>
+eval "$("/usr/local/opt/lig/bin/lig" init zsh pre)"
+# <<< lig pre <<<
 # Interactive-shell defaults and optional startup profiling.
 [[ ! -o interactive ]] || umask o-w
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
@@ -239,3 +242,8 @@ function zsh-update() {
 
   exec zsh -l
 }
+# >>> lig post >>>
+# Antidote defers autosuggestions and fast-syntax-highlighting. Install Lig's
+# ZLE hooks after those plugins so they cannot replace Lig's line widgets.
+zsh-defer -c "$(/usr/local/opt/lig/bin/lig init zsh post)"
+# <<< lig post <<<

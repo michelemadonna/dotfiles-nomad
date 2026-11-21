@@ -151,7 +151,8 @@
                 },
                 {
                     "properties": {
-                        "display_mode": "context"
+                        "display_mode": "context",
+                        "cache_duration": "5m"
                     },
                     "template": "\ue738 {{ if .Error }}{{ .Error }}{{ else }}{{ .Full }}{{ end }} ",
                     "trailing_diamond": "<transparent,background>\ue0b2</>",
@@ -159,11 +160,7 @@
                     "foreground": "p:red",
                     "leading_diamond": "\ue0b2",
                     "style": "diamond",
-                    "type": "java",
-                    "cache": {
-                        "duration": "5m",
-                        "strategy": "folder"
-                    }
+                    "type": "java"
                 },
                 {
                     "properties": {
