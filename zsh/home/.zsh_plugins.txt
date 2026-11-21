@@ -1,0 +1,28 @@
+# 1. Opzioni opinionate pronte all'uso
+mattmc3/zephyr path:plugins/environment
+mattmc3/zephyr path:plugins/editor
+mattmc3/zephyr path:plugins/history
+mattmc3/zephyr path:plugins/directory
+mattmc3/zephyr path:plugins/color
+
+# 2. Completamenti & Compinit automatico (zsh-completions prima di zephyr/completion)
+zsh-users/zsh-completions kind:fpath
+mattmc3/zephyr path:plugins/completion
+
+# 3. SSH Agent
+ohmyzsh/ohmyzsh path:plugins/ssh-agent pin:c0140703a53eb0d22be44f7bac318d0baacc927c
+ohmyzsh/ohmyzsh path:plugins/sudo pin:c0140703a53eb0d22be44f7bac318d0baacc927c
+ohmyzsh/ohmyzsh path:plugins/command-not-found pin:c0140703a53eb0d22be44f7bac318d0baacc927c
+
+# 4. Plugin interattivi (caricati in differita)
+zsh-users/zsh-autosuggestions kind:defer
+zdharma-continuum/fast-syntax-highlighting kind:defer
+zsh-users/zsh-history-substring-search
+
+# Local runtime integrations, loaded after init-tools prepares PATH and cache paths.
+$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-mise.plugin.zsh
+$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-oh-my-posh.plugin.zsh
+$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-pkgmng.plugin.zsh
+$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-containers.plugin.zsh kind:defer
+$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-macos.plugin.zsh kind:defer
+$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-eza.plugin.zsh kind:defer
