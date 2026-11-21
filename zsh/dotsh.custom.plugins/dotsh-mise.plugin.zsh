@@ -31,6 +31,7 @@ local mise_activate_cache="$mise_cache_dir/${__mise}-activate-lazy.zsh"
 local mise_activate_tmp="$mise_activate_cache.${$}.tmp"
 local mise_activate_raw_tmp="$mise_activate_cache.${$}.raw"
 local mise_initial_hook_deferred=0
+local -i mise_context_active=0
 local -a mise_path_before_activation=($path)
 local mise_path_before_rehash=$PATH
 
@@ -134,10 +135,16 @@ fi
 if [[ -s $mise_activate_cache ]]; then
   source "$mise_activate_cache"
   mise_initial_hook_deferred=1
-  _zqs_mise_context_needs_activation || mise_initial_hook_deferred=0
+  if _zqs_mise_context_needs_activation; then
+    mise_context_active=1
+  else
+    mise_initial_hook_deferred=0
+  fi
 else
   eval "$(command "$mise_binary" --quiet activate zsh)"
+  _zqs_mise_context_needs_activation && mise_context_active=1
 fi
+typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=$mise_context_active
 
 # `mise activate` embeds the PATH from cache-generation time. Keep its shims
 # first, but do not let a cache prepared by the installer discard paths added
@@ -178,14 +185,36 @@ if (( $+functions[_mise_hook_precmd] && $+functions[_mise_hook_chpwd] )); then
     if [[ ${__MISE_ZSH_CHPWD_RAN:-0} == 1 ]]; then
       # Let Mise consume its chpwd marker without invoking hook-env twice.
       _mise_hook_precmd || return
-    elif (( ! ${_ZQS_MISE_REFRESH_REQUIRED:-0} &&
-            ${_ZQS_MISE_REFRESH_SECONDS:-5} > 0 &&
-            now - ${_ZQS_MISE_LAST_REFRESH:-0} <
-              ${_ZQS_MISE_REFRESH_SECONDS:-5} )) &&
-        [[ $PATH == ${_ZQS_MISE_LAST_PATH:-} ]]; then
-      return 0
+      if _zqs_mise_context_needs_activation; then
+        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=1
+      else
+        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=0
+      fi
     else
+      if (( ! ${_ZQS_MISE_REFRESH_REQUIRED:-0} )) &&
+         [[ $PATH == ${_ZQS_MISE_LAST_PATH:-} ]]; then
+        if (( ${_ZQS_MISE_REFRESH_SECONDS:-5} > 0 )) &&
+           (( now - ${_ZQS_MISE_LAST_REFRESH:-0} <
+                ${_ZQS_MISE_REFRESH_SECONDS:-5} )); then
+          return 0
+        fi
+
+        # Outside a Mise context, avoid spawning `mise hook-env` on the
+        # periodic refresh. Recheck the lightweight config/path predicate so
+        # a newly added config still activates on the next refresh interval.
+        if ! _zqs_mise_context_needs_activation &&
+           (( ! ${_ZQS_MISE_CONTEXT_ACTIVE:-0} )); then
+          typeset -gF _ZQS_MISE_LAST_REFRESH=$now
+          return 0
+        fi
+      fi
+
       _mise_hook_precmd || return
+      if _zqs_mise_context_needs_activation; then
+        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=1
+      else
+        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=0
+      fi
     fi
 
     typeset -g _ZQS_MISE_LAST_PATH=$PATH
@@ -227,8 +256,7 @@ fi
 unset mise_binary mise_cache_dir mise_activate_cache mise_activate_tmp mise_activate_raw_tmp
 unset mise_initial_hook_deferred mise_refresh_seconds mise_path_before_activation
 unset mise_asdf_compat_dir mise_legacy_asdf_dir
-unfunction _zqs_mise_tool_versions_active _zqs_mise_config_needs_activation \
-  _zqs_mise_context_needs_activation 2>/dev/null
+unset mise_context_active
 
 asdf() {
   command mise --quiet "$@"
