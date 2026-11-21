@@ -57,11 +57,10 @@ for _fn_dir in $_fn_candidates; do
 done
 unset _fn_candidates _fn_dir
 
+# 2. SSH-AGENT UNIVERSALE (macOS Keychain, Linux Desktop Keyring/KWallet, Server SSH)
 # Oh My Zsh's ssh-agent plugin is loaded standalone through Antidote, so define
 # the host key that Oh My Zsh normally prepares in its full framework startup.
 : "${SHORT_HOST:=${HOST%%.*}}"
-
-# 2. SSH-AGENT UNIVERSALE (macOS Keychain, Linux Desktop Keyring/KWallet, Server SSH)
 zstyle :omz:plugins:ssh-agent honor-existing yes
 zstyle :omz:plugins:ssh-agent lazy yes
 zstyle :omz:plugins:ssh-agent quiet yes
@@ -147,6 +146,10 @@ path=("$HOME/.local/bin" $path)
 # Shared cache root for Mise, completions and other Zsh plugins.
 typeset -g ZSH_CACHE_DIR="${ZSH_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zsh}"
 
+# Reuse Zephyr's completion dump and audit it only when the cache expires or
+# the completion search path changes.
+zstyle ':zephyr:plugin:completion' use-cache yes
+
 # 4. ANTIDOTE (Auto-install + Bundle statico)
 for _antidote_dir in \
   /opt/homebrew/opt/antidote/share/antidote \
@@ -188,8 +191,16 @@ zsh-defer bindkey "${terminfo[kcud1]}" history-substring-search-down
 #alias ls="${aliases[ls]:-ls} -A"
 ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(bracketed-paste)
 (( $+commands[python3] )) && alias python='command python3'
+# GPG / PINENTRY
+export GPG_TTY=$(tty)
+## Long running processes should return time after they complete. Specified
+## in seconds.
+REPORTTIME=${REPORTTIME:-2}
+
+TIMEFMT="%U user %S system %P cpu %*Es total"
 
 print -n $'\e[9999;1H'
+
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zprof
 fi
@@ -204,14 +215,11 @@ function zsh-update() {
   local _zdotdir="${ZDOTDIR:-$HOME}"
   local _dotfiles_zsh_dir="${DOTFILES_DIR:-$HOME/.dotfiles}/zsh"
 
-  # 1. Rimuove le cache di startup, Mise, Oh My Posh e completamento.
+  # 1. Rimuove le cache di startup e Mise. Zephyr e Oh My Posh verificano
+  # autonomamente se le rispettive cache sono obsolete.
   rm -f \
     "$_zsh_cache_dir"/init-tools.zsh*(N) \
-    "$_zsh_cache_dir"/mise-activate-lazy.zsh*(N) \
-    "$_zsh_cache_dir"/oh-my-posh-init-*.zsh*(N) \
-    "$_zsh_cache_dir"/zcompdump*(N) \
-    "$_zsh_cache_dir"/.zcompdump*(N)
-  [[ -n "$ZSH_COMPDUMP" ]] && rm -f "${ZSH_COMPDUMP}"*(N)
+    "$_zsh_cache_dir"/mise-activate-lazy.zsh*(N)
   [[ -d "$_sc_dir" ]] && rm -rf "${_sc_dir:?}"/*(N)
 
   # 2. Rimuove le vecchie cache per-sessione di Oh My Posh.
