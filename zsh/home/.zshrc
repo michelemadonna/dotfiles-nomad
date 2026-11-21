@@ -1,5 +1,10 @@
 # >>> lig pre >>>
-eval "$("/usr/local/opt/lig/bin/lig" init zsh pre)"
+if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
+      ${LIG_TTY-} != "$TTY" && -t 0 && -t 1 &&
+      "$TERM" != dumb && -z ${INSIDE_EMACS-} ]] && (( $+commands[lig] )); then
+  source "$DOTFILES_DIR/zsh/helpers/lig-init.zsh"
+  _dotsh_lig_source_init pre
+fi
 # <<< lig pre <<<
 # Interactive-shell defaults and optional startup profiling.
 [[ ! -o interactive ]] || umask o-w
@@ -24,17 +29,14 @@ function _zcompile_if_needed() {
   local src="$1"
   [[ -r "$src" ]] || return 1
   local zwc="${src}.zwc"
-  local -A src_stat zwc_stat
-
-  zstat -H src_stat "$src" 2>/dev/null || return 1
-  if ! zstat -H zwc_stat "$zwc" 2>/dev/null || (( src_stat[mtime] > zwc_stat[mtime] )); then
-    zcompile -R "$zwc" "$src" 2>/dev/null
+  if [[ ! -s $zwc || $src -nt $zwc ]]; then
+    { zcompile -R "$zwc" "$src" 2>/dev/null } &!
   fi
 }
 
 # Auto-compila .zshenv e .zshrc in background se modificati
-_zcompile_if_needed "${ZDOTDIR:-$HOME}/.zshenv" &!
-_zcompile_if_needed "${ZDOTDIR:-$HOME}/.zshrc" &!
+_zcompile_if_needed "${ZDOTDIR:-$HOME}/.zshenv"
+_zcompile_if_needed "${ZDOTDIR:-$HOME}/.zshrc"
 
 # 1. FPATH BASE (Prima di Antidote affinché compinit trovi le completion del package manager)
 typeset -gU fpath FPATH
@@ -169,6 +171,10 @@ unset _antidote_dir
 : "${ANTIDOTE_HOME:=${ZDOTDIR:-$HOME}/.antidote}"
 [[ -d "$ANTIDOTE_HOME" ]] || git clone --depth=1 https://github.com/mattmc3/antidote.git "$ANTIDOTE_HOME" 2>/dev/null
 source "${ANTIDOTE_HOME}/antidote.zsh"
+# Use a new static bundle so existing generated files cannot retain the old
+# defer options. None of the deferred plugins need to rerun precmd on load.
+zstyle ':antidote:bundle:*' defer-options '-m'
+zstyle ':antidote:static' file "$ZSH_CACHE_DIR/antidote-bundle-no-precmd.zsh"
 antidote load
 
 # 5. OH MY POSH
@@ -187,15 +193,15 @@ else
 fi
 
 # 6. KEYBINDING FRECCE & UPDATE ALL-IN-ONE
-zsh-defer bindkey "${terminfo[kcuu1]}" history-substring-search-up
-zsh-defer bindkey "${terminfo[kcud1]}" history-substring-search-down
+zsh-defer -m bindkey "${terminfo[kcuu1]}" history-substring-search-up
+zsh-defer -m bindkey "${terminfo[kcud1]}" history-substring-search-down
 
 # Add flags to existing aliases.
 #alias ls="${aliases[ls]:-ls} -A"
 ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(bracketed-paste)
 (( $+commands[python3] )) && alias python='command python3'
 # GPG / PINENTRY
-export GPG_TTY=$(tty)
+[[ -t 0 && -n $TTY ]] && export GPG_TTY=$TTY
 ## Long running processes should return time after they complete. Specified
 ## in seconds.
 REPORTTIME=${REPORTTIME:-2}
@@ -222,7 +228,8 @@ function zsh-update() {
   # autonomamente se le rispettive cache sono obsolete.
   rm -f \
     "$_zsh_cache_dir"/init-tools.zsh*(N) \
-    "$_zsh_cache_dir"/mise-activate-lazy.zsh*(N)
+    "$_zsh_cache_dir"/mise-activate-lazy.zsh*(N) \
+    "$_zsh_cache_dir"/lig-init-{pre,post}.zsh*(N)
   [[ -d "$_sc_dir" ]] && rm -rf "${_sc_dir:?}"/*(N)
 
   # 2. Rimuove le vecchie cache per-sessione di Oh My Posh.
@@ -231,7 +238,8 @@ function zsh-update() {
     "$_omp_cache_dir"/.cache-*.tmp(N)
 
   # 3. Rimuove il bundle statico Antidote per forzare la rigenerazione
-  rm -f "$_zdotdir/.zsh_plugins.zsh"(N)
+  rm -f "$_zdotdir/.zsh_plugins.zsh"(N) \
+    "${ZSH_CACHE_DIR:-$_zsh_cache_dir}"/antidote-bundle-no-precmd.zsh*(N)
 
   # Remove every compiled Zsh file under the active dotfiles and ZDOTDIR trees.
   rm -f \
@@ -243,7 +251,16 @@ function zsh-update() {
   exec zsh -l
 }
 # >>> lig post >>>
-# Antidote defers autosuggestions and fast-syntax-highlighting. Install Lig's
-# ZLE hooks after those plugins so they cannot replace Lig's line widgets.
-zsh-defer -c "$(/usr/local/opt/lig/bin/lig init zsh post)"
+if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
+      -n ${LIG_TTY-} && "$LIG_TTY" == "$TTY" ]] && (( $+commands[lig] )); then
+  source "$DOTFILES_DIR/zsh/helpers/lig-init.zsh"
+  # Antidote queues autosuggestions and highlighting before Lig's ZLE hooks.
+  zsh-defer -m -p _dotsh_lig_finish_init
+fi
 # <<< lig post <<<
+
+# Autosuggestions otherwise waits for the next real precmd to bind widgets.
+# Its dependencies and Lig's widget hooks have run when this task executes.
+if (( $+functions[zsh-defer] )); then
+  zsh-defer -m -p -c '(( ! $+functions[_zsh_autosuggest_start] )) || _zsh_autosuggest_start'
+fi
