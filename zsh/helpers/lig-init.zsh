@@ -38,8 +38,36 @@ _dotsh_lig_source_init() {
   eval "$init"
 }
 
+_dotsh_lig_ask_with_ghost() {
+  local input=$BUFFER
+  local -a input_highlight=("${region_highlight[@]}")
+  local -i completion_status=0
+  builtin zle _dotsh_lig_ask_original -- "$@" || completion_status=$?
+  # The completion widget restores POSTDISPLAY, but can leave the highlight
+  # clamped to BUFFER. Reapply it after returning to the real ZLE line.
+  if [[ $BUFFER == "$input" ]]; then
+    region_highlight=("${input_highlight[@]}")
+  fi
+  if [[ -n $POSTDISPLAY ]]; then
+    _zsh_autosuggest_highlight_reset
+    _zsh_autosuggest_highlight_apply
+  fi
+  return $completion_status
+}
+
 _dotsh_lig_finish_init() {
   _dotsh_lig_source_init post || return
+  # Lig's terminal config owns Tab; if it reaches ZLE, do not run shell completion.
+  builtin bindkey -M emacs '^I' undefined-key
+  builtin bindkey -M viins '^I' undefined-key
+  builtin bindkey -M vicmd '^I' undefined-key
+  if [[ ${widgets[_lig_ask]-} == completion:* ]] &&
+      (( $+functions[_zsh_autosuggest_highlight_reset] &&
+         $+functions[_zsh_autosuggest_highlight_apply] )); then
+    builtin zle -A _lig_ask _dotsh_lig_ask_original
+    builtin zle -N _lig_ask _dotsh_lig_ask_with_ghost
+    ZSH_AUTOSUGGEST_IGNORE_WIDGETS+=(_lig_ask _dotsh_lig_ask_original)
+  fi
   # This runs during the first ZLE session, after the first precmd. Seed Lig's
   # context and buffer here without calling the other prompt hooks again.
   (( ! $+functions[_lig_precmd] )) || _lig_precmd

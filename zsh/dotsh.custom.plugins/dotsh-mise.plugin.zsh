@@ -13,6 +13,7 @@ if (( ! $+commands[mise] )); then
     return
   fi
 fi
+typeset -g _ZQS_MISE_COMMAND=$__mise
 
 # This lightweight compatibility tree lets Powerlevel10k's asdf segment show
 # ASDF-compatible Mise runtimes without scanning the complete plugin registry.
@@ -262,58 +263,58 @@ asdf() {
   command mise --quiet "$@"
 }
 
-# Cache the generated completion, then source it directly. Using `autoload +X`
-# here only loads mise's autoload trampoline: its first invocation replaces
-# `_mise` with the real function and returns no candidates. That both requires
-# a second TAB and overwrites our wrapper below.
-local mise_completion_dir="$ZSH_CACHE_DIR/completions"
-local mise_completion_file="$mise_completion_dir/_$__mise"
-local mise_completion_tmp="$mise_completion_file.${$}.tmp"
-local mise_completion_binary=${commands[$__mise]}
+# Keep the native Mise activation function available before the deferred
+# completion setup, so the command wrapper works even if typed immediately.
+if (( $+functions[mise] )); then
+  functions[mise_orig]=$functions[mise]
+fi
 
-if [[ ! -s $mise_completion_file || $mise_completion_binary -nt $mise_completion_file ]]; then
-  [[ -d $mise_completion_dir ]] || command mkdir -p "$mise_completion_dir"
-  if command "$mise_completion_binary" --quiet completion zsh >| "$mise_completion_tmp"; then
-    command mv -f "$mise_completion_tmp" "$mise_completion_file"
-  else
-    command rm -f "$mise_completion_tmp"
+# Loading Mise's generated completion script takes roughly 650 ms on this
+# setup. Register it after the first prompt, when Zephyr has initialized
+# compdef, so completion setup does not delay Oh My Posh.
+_dotsh_mise_init_completion() {
+  emulate -L zsh
+  local mise_command=${_ZQS_MISE_COMMAND:-mise}
+  local mise_completion_dir="$ZSH_CACHE_DIR/completions"
+  local mise_completion_file="$mise_completion_dir/_$mise_command"
+  local mise_completion_tmp="$mise_completion_file.${$}.tmp"
+  local mise_completion_binary=${commands[$mise_command]}
+
+  if [[ ! -s $mise_completion_file || $mise_completion_binary -nt $mise_completion_file ]]; then
+    [[ -d $mise_completion_dir ]] || command mkdir -p "$mise_completion_dir"
+    if command "$mise_completion_binary" --quiet completion zsh >| "$mise_completion_tmp"; then
+      command mv -f "$mise_completion_tmp" "$mise_completion_file"
+    else
+      command rm -f "$mise_completion_tmp"
+    fi
   fi
-fi
 
-typeset -g -A _comps
-if [[ -s $mise_completion_file ]]; then
-  source "$mise_completion_file"
-  functions[_mise_orig]=$functions[_mise]
-else
-  autoload -Uz _$__mise
-fi
-_comps[$__mise]=_$__mise
+  typeset -g -A _comps
+  if [[ -s $mise_completion_file ]]; then
+    source "$mise_completion_file"
+    functions[_mise_orig]=$functions[_mise]
+  else
+    autoload -Uz _$mise_command
+  fi
+  _comps[$mise_command]=_$mise_command
 
-unset mise_completion_dir mise_completion_file mise_completion_tmp
-unset mise_completion_binary
+  functions[_mise]=$functions[_zqs_mise_completion]
+
+  unset mise_completion_dir mise_completion_file mise_completion_tmp
+  unset mise_completion_binary
+}
 
 mise-install-usage() {
   command mise list -q -i usage | grep -q usage || command mise use usage
 }
 
 
-# Wrap mise to update .tool-versions on `mise use`. tool versions are
-# translated to asdf format and saved in .tool-versions in the current
-# directory or in $HOME/.tool-versions if `mise use -g` is used for global
-# version changes. This is needed by powerlevel10k to show the current
-# versions in the prompt using the asdf segment.
-# The function also adds fzf-based version selection that lists only the
-# versions installed for the specified runtime when the user types `mise use
-# <runtime>@` and presses tab for completion.
-if (( $+functions[mise] )); then
-  functions[mise_orig]=$functions[mise]
-fi
-
+# Wrap mise to update .tool-versions on `mise use`; preserve its native completion
+# for all subcommands outside the custom `mise use` version selector.
 _zqs_mise_native_completion() {
   if (( ! $+functions[_mise_orig] )); then
-    # Fallback for a missing/unwritable cache: invoke the autoload trampoline
-    # in the real completion context, capture the function it installs, then
-    # restore our wrapper. Candidates are returned on this same first TAB.
+    # Fallback for a missing/unwritable cache: invoke the autoload trampoline in
+    # the real completion context, capture it, then restore this wrapper.
     unfunction _mise 2>/dev/null
     autoload -Uz _mise
     _mise "$@"
@@ -363,8 +364,6 @@ _zqs_mise_completion() {
       return 0
     fi
 
-    # For `mise use`, offer only tools that are actually installed. Append
-    # `@` so the following TAB enters the installed-version/system selector.
     local tool_prefix=${words[$idx]}
     local -a installed_tools installed_specs
     installed_tools=("${(@f)$(command mise ls --installed --quiet |
@@ -378,7 +377,11 @@ _zqs_mise_completion() {
   _zqs_mise_native_completion "$@"
 }
 
-functions[_mise]=$functions[_zqs_mise_completion]
+if (( $+functions[zsh-defer] )); then
+  zsh-defer -m -p _dotsh_mise_init_completion
+else
+  _dotsh_mise_init_completion
+fi
 
 # Translate mise runtime@version to asdf format and save to .tool-versions
 _mise_runtime_to_asdf() {

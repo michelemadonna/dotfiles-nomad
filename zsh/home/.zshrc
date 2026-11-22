@@ -1,24 +1,18 @@
 # >>> lig pre >>>
+if [[ -x "$HOME/.local/bin/lig" ]]; then
+  path=("$HOME/.local/bin" $path)
+fi
 if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
       ${LIG_TTY-} != "$TTY" && -t 0 && -t 1 &&
       "$TERM" != dumb && -z ${INSIDE_EMACS-} ]] && (( $+commands[lig] )); then
   source "$DOTFILES_DIR/zsh/helpers/lig-init.zsh"
   _dotsh_lig_source_init pre
 fi
-# <<< lig pre <<<
+#<<< lig pre <<<
 # Interactive-shell defaults and optional startup profiling.
 [[ ! -o interactive ]] || umask o-w
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zmodload zsh/zprof
-fi
-export DOTSH_MISE_REFRESH_SECONDS=${DOTSH_MISE_REFRESH_SECONDS:=5} #0 checks every prompt
-export DOTSH_USE_MISE=${DOTSH_USE_MISE:=true} #true/false
-export HISTFILE="$HOME/.local/state/zsh/history"
-export HISTORY_IGNORE="(cd ..|l[s]#( *)#|pwd *|exit *|date *|* --help)"
-export ZSH_COMPDUMP=${ZSH_COMPDUMP:="$XDG_CACHE_HOME/zsh/.zcompdump-${HOST}-${ZSH_VERSION}"}
-export DOTSH_OH_MY_POSH_CONFIG="$DOTFILES_DIR/oh-my-posh/custom.omp.json"
-if [[ -z ${INTELLIJ_ENVIRONMENT_READER:-} ]]; then
-  export POWERLEVEL9K_INSTANT_PROMPT='quiet'
 fi
 
 #0 Carica zstat una sola volta (builtin in C, costo ~0 ms)
@@ -37,6 +31,12 @@ function _zcompile_if_needed() {
 # Auto-compila .zshenv e .zshrc in background se modificati
 _zcompile_if_needed "${ZDOTDIR:-$HOME}/.zshenv"
 _zcompile_if_needed "${ZDOTDIR:-$HOME}/.zshrc"
+_zcompile_if_needed  "$DOTFILES_DIR/zsh/helpers/lig-init.zsh"
+# Compile every custom plugin when its source changes.
+for _custom_plugin in "${DOTFILES_DIR}/zsh/dotsh.custom.plugins"/*.zsh(N); do
+  _zcompile_if_needed "$_custom_plugin"
+done
+unset _custom_plugin
 
 # 1. FPATH BASE (Prima di Antidote affinché compinit trovi le completion del package manager)
 typeset -gU fpath FPATH
@@ -61,45 +61,6 @@ for _fn_dir in $_fn_candidates; do
   [[ -d "$_fn_dir" ]] && fpath=("$_fn_dir" $fpath)
 done
 unset _fn_candidates _fn_dir
-
-# 2. SSH-AGENT UNIVERSALE (macOS Keychain, Linux Desktop Keyring/KWallet, Server SSH)
-# Oh My Zsh's ssh-agent plugin is loaded standalone through Antidote, so define
-# the host key that Oh My Zsh normally prepares in its full framework startup.
-: "${SHORT_HOST:=${HOST%%.*}}"
-zstyle :omz:plugins:ssh-agent honor-existing yes
-zstyle :omz:plugins:ssh-agent lazy yes
-zstyle :omz:plugins:ssh-agent quiet yes
-if [[ -z "$SSH_CONNECTION" && -n "$DISPLAY$WAYLAND_DISPLAY" ]]; then
-  for _s in "${XDG_RUNTIME_DIR}/keyring/ssh" "${XDG_RUNTIME_DIR}/gcr/ssh" "${XDG_RUNTIME_DIR}/ssh-agent.socket"; do
-    [[ -S "$_s" ]] && export SSH_AUTH_SOCK="$_s" && break
-  done; unset _s
-  for _ask in ksshaskpass seahorse-ssh-askpass gnome-ssh-askpass; do
-    (( $+commands[$_ask] )) && export SSH_ASKPASS="${commands[$_ask]}" SSH_ASKPASS_REQUIRE=prefer && break
-  done; unset _ask
-fi
-
-# 2.1 Stampa le chiavi SSH in memoria
-ssh-ids() {
-  print '\nCurrent SSH Keys:'
-  if ! ssh-add -l 2>/dev/null; then
-    print -P "%F{yellow}Nessuna chiave SSH in memoria (caricamento lazy).%f"
-  fi
-}
-
-# 2.2 Forza il caricamento immediato delle chiavi nel Portachiavi
-ssh-load() {
-  if [[ "$OSTYPE" == darwin* ]]; then
-    ssh-add --apple-load-keychain 2>/dev/null || ssh-add --apple-use-keychain 2>/dev/null || ssh-add -A 2>/dev/null
-  else
-    ssh-add
-  fi
-  ssh-ids
-}
-
-# 2.3 Stampa automatica all'avvio (disattivabile con: zstyle ':zim:ssh-local' show-ids no)
-if zstyle -T ':zim:ssh-local' show-ids; then
-  ssh-ids
-fi
 
 # 3. CACHE STATICA CON AUTO-INVALIDAZIONE VIA ZSTAT (MTIME)
 local _init_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/init-tools.zsh"

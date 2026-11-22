@@ -1,0 +1,544 @@
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -174,23 +174,103 @@
+     }
+ }
+ 
+-/// The outer terminal can already contain output when lig starts. Establish its
+-/// real origin before forwarding child output; a new vt100 screen assumes (1,1).
+-fn terminal_origin() -> (Option<(u16, u16)>, Vec<u8>) {
+-    let mut input = Vec::new();
+-    if term::write(b"\x1b[6n").is_err() {
+-        return (None, input);
+-    }
+-    let deadline = Instant::now() + Duration::from_millis(200);
+-    while Instant::now() < deadline {
+-        let mut bytes = [0; 4096];
+-        let Some(n) = term::read_timeout(&mut bytes, deadline.saturating_duration_since(Instant::now())) else { break };
+-        input.extend_from_slice(&bytes[..n]);
+-        if let Some(position) = take_cursor_report(&mut input) {
+-            return (Some(position), input);
++/// Track the startup DSR without delaying child output or ordinary input.
++struct StartupCursor {
++    deadline: Instant,
++    partial: Vec<u8>,
++    paste: bool,
++    expired: bool,
++    replay: Option<OriginReplay>,
++}
++
++#[derive(Default)]
++struct OriginReplay {
++    bytes: Vec<u8>,
++    marks: Vec<usize>,
++    prompt: Option<usize>,
++}
++
++impl OriginReplay {
++    fn rebase(self, rows: u16, cols: u16, (row, col): (u16, u16)) -> (vt100::Parser, Option<PromptEnd>) {
++        let mut parser = vt100::Parser::new(rows, cols, usize::from(rows));
++        parser.process(format!("\x1b[{};{}H", row.min(rows), col.min(cols)).as_bytes());
++        let mut at = 0;
++        let mut anchor = None;
++        let mut marks = self.marks.into_iter().peekable();
++        let mut prompt = self.prompt;
++        while let Some(pos) = marks.peek().copied().into_iter().chain(prompt).min() {
++            parser.process(&self.bytes[at..pos]);
++            at = pos;
++            if prompt == Some(pos) {
++                let screen = parser.screen();
++                let (row, col) = screen.cursor_position();
++                anchor = Some(PromptEnd { row, col, prefix: screen.contents_between(row, 0, row, col) });
++                prompt = None;
++            } else {
++                marks.next();
++                if parser.screen().cursor_position().1 != 0 {
++                    parser.process(b"\r\n");
++                }
++            }
++        }
++        parser.process(&self.bytes[at..]);
++        (parser, anchor)
++    }
++}
++
++impl StartupCursor {
++    fn new() -> Option<Self> {
++        term::write(b"\x1b[6n").ok()?;
++        Some(Self {
++            deadline: Instant::now() + CURSOR_REPORT_WAIT,
++            partial: Vec::new(),
++            paste: false,
++            expired: false,
++            replay: Some(OriginReplay::default()),
++        })
++    }
++
++    /// Remove only our CPR. A split escape sequence is retained only while it
++    /// could be a report or a paste delimiter, bounded by the startup deadline.
++    fn input(&mut self, data: &[u8]) -> (Vec<u8>, Option<(u16, u16)>) {
++        let mut bytes = std::mem::take(&mut self.partial);
++        bytes.extend_from_slice(data);
++        let mut output = Vec::with_capacity(bytes.len());
++        let mut at = 0;
++        while at < bytes.len() {
++            let rest = &bytes[at..];
++            if rest[0] == 0x1b {
++                let delimiter: &[u8] = if self.paste { b"\x1b[201~" } else { b"\x1b[200~" };
++                if rest.starts_with(delimiter) {
++                    self.paste = !self.paste;
++                    output.extend_from_slice(delimiter);
++                    at += delimiter.len();
++                    continue;
++                }
++                if delimiter.starts_with(rest) {
++                    self.partial.extend_from_slice(rest);
++                    break;
++                }
++                if !self.paste && rest.starts_with(b"\x1b[") {
++                    let params = &rest[2..];
++                    let end = params.iter().take(12).position(|b| !b.is_ascii_digit() && *b != b';');
++                    if let Some(end) = end.filter(|&end| params[end] == b'R') {
++                        let mut report = rest[..end + 3].to_vec();
++                        if let Some(position) = take_cursor_report(&mut report) {
++                            output.extend_from_slice(&rest[end + 3..]);
++                            return (output, Some(position));
++                        }
++                    } else if params.len() < 12 && end.is_none() {
++                        self.partial.extend_from_slice(rest);
++                        break;
++                    }
++                }
++            }
++            output.push(rest[0]);
++            at += 1;
+         }
++        (output, None)
+     }
+-    (None, input)
+ }
+ 
+ /// Replace this process with the plain shell (used when lig can't run).
+@@ -339,23 +419,13 @@
+     });
+ 
+     let raw = term::RawMode::enable()?;
+-    let (origin, typeahead) = terminal_origin();
+-    crate::log(&format!(
+-        "startup shell={} size={rows}x{cols} origin={origin:?} typeahead={}",
+-        shell.display(),
+-        typeahead.len()
+-    ));
+-    let mut parser = vt100::Parser::new(rows, cols, usize::from(rows));
+-    if let Some((row, col)) = origin {
+-        parser.process(format!("\x1b[{};{}H", row.min(rows), col.min(cols)).as_bytes());
+-    }
++    let startup_cursor = StartupCursor::new();
++    crate::log(&format!("startup shell={} size={rows}x{cols} origin=async", shell.display()));
++    let parser = vt100::Parser::new(rows, cols, usize::from(rows));
+     let cfg = Config::load();
+     crate::icons::set_overrides(&cfg.icons);
+ 
+     let (tx, rx) = unbounded::<Event>();
+-    if !typeahead.is_empty() {
+-        let _ = tx.send(Event::Input(typeahead));
+-    }
+     spawn_stdin_reader(tx.clone());
+     spawn_pty_reader(reader, tx.clone());
+     if shell_name(&shell) == "nu" {
+@@ -381,7 +451,8 @@
+         insert_file,
+         query_file,
+         fish_sequence: 0,
+-        unknown_rows: origin.map_or(0, |(row, _)| row.saturating_sub(1).min(rows)),
++        unknown_rows: 0,
++        startup_cursor,
+         insertion_transport: InsertionTransport::for_shell(&shell),
+         fish_shell: shell_name(&shell) == "fish" || is_powershell(&shell),
+         report_key: is_powershell(&shell),
+@@ -751,6 +822,7 @@
+     fish_sequence: u64,
+     /// Rows above the startup cursor are absent from the screen model.
+     unknown_rows: u16,
++    startup_cursor: Option<StartupCursor>,
+     insertion_transport: InsertionTransport,
+     /// The shell reports its line when asked, as fish does; PowerShell speaks the same
+     /// protocol (see shell/lig.ps1).
+@@ -867,6 +939,9 @@
+ impl Session {
+     fn event_loop(&mut self, rx: &Receiver<Event>) {
+         loop {
++            if self.startup_cursor.as_ref().is_some_and(|p| Instant::now() >= p.deadline) {
++                self.expire_startup_cursor();
++            }
+             self.resync_tick();
+             if self.fish_refresh.as_ref().and_then(FishRefresh::wake).is_some_and(|due| due <= Instant::now()) {
+                 self.fish_sequence += 1;
+@@ -886,6 +961,9 @@
+             if let Some(w) = self.resync_wake() {
+                 deadline = Some(deadline.map_or(w, |d| d.min(w)));
+             }
++            if let Some(p) = &self.startup_cursor {
++                deadline = Some(deadline.map_or(p.deadline, |d| d.min(p.deadline)));
++            }
+             let woken_for_more = deadline;
+             if self.drawn.is_some() {
+                 // An open popup takes a new theme without waiting for a key.
+@@ -917,6 +995,9 @@
+                 match rx.recv_deadline(due) {
+                     Ok(ev) => ev,
+                     Err(RecvTimeoutError::Timeout) => {
++                        if self.startup_cursor.as_ref().is_some_and(|p| Instant::now() >= p.deadline) {
++                            self.expire_startup_cursor();
++                        }
+                         if self.drawn.is_some()
+                             && self.config_checked.elapsed() >= CONFIG_POLL
+                             && !self.reload_theme()
+@@ -963,6 +1044,13 @@
+                     None => self.on_output(&data),
+                 },
+                 Event::Input(mut data) => {
++                    if let Some(probe) = &mut self.startup_cursor {
++                        let (unhandled, origin) = probe.input(&data);
++                        data = unhandled;
++                        if origin.is_some() {
++                            self.finish_startup_cursor(origin);
++                        }
++                    }
+                     if let Some(r) = self.resync.as_mut().filter(|r| r.asked.is_some()) {
+                         data.splice(0..0, std::mem::take(&mut r.partial));
+                         if let Some(report) = take_cursor_report(&mut data) {
+@@ -1000,6 +1088,66 @@
+         }
+     }
+ 
++    fn awaiting_startup_cursor(&self) -> bool {
++        self.startup_cursor.as_ref().is_some_and(|probe| !probe.expired)
++    }
++
++    fn expire_startup_cursor(&mut self) {
++        // After the deadline keep a short grace period to consume a late
++        // answer. Give up ownership when the shell or resize needs its own DSR.
++        if self.awaiting_startup_cursor() && self.resync.is_none() && self.shell_cursor_queries == 0 {
++            let probe = self.startup_cursor.as_mut().unwrap();
++            probe.expired = true;
++            probe.deadline = Instant::now() + CURSOR_REPORT_WAIT;
++            probe.replay = None;
++            let typed = std::mem::take(&mut probe.partial);
++            if !typed.is_empty() {
++                self.on_input(&typed);
++            }
++            self.mark_dirty();
++        } else {
++            self.finish_startup_cursor(None);
++        }
++    }
++
++    fn finish_startup_cursor(&mut self, origin: Option<(u16, u16)>) {
++        let Some(probe) = self.startup_cursor.take() else { return };
++        crate::log(&format!("startup origin={origin:?}"));
++        if let (Some(origin), Some(replay)) = (origin, probe.replay) {
++            let (rows, cols) = self.parser.screen().size();
++            let (parser, prompt) = replay.rebase(rows, cols, origin);
++            self.parser = parser;
++            self.unknown_rows = origin.0.saturating_sub(1).min(rows);
++            if self.prompt_end.is_some() {
++                self.prompt_end = prompt;
++                self.read_line_from_screen();
++            }
++        }
++        if !probe.partial.is_empty() {
++            self.on_input(&probe.partial);
++        }
++        self.mark_dirty();
++    }
++
++    fn process_child_screen(&mut self, bytes: &[u8]) {
++        if let Some(probe) = &mut self.startup_cursor
++            && let Some(replay) = &mut probe.replay
++        {
++            if replay.bytes.len().saturating_add(bytes.len()) <= 1024 * 1024 {
++                replay.bytes.extend_from_slice(bytes);
++            } else {
++                probe.replay = None;
++            }
++        }
++        self.parser.process(bytes);
++    }
++
++    fn record_startup_prompt(&mut self) {
++        if let Some(replay) = self.startup_cursor.as_mut().and_then(|p| p.replay.as_mut()) {
++            replay.prompt = Some(replay.bytes.len());
++        }
++    }
++
+     /// Ask fish (a signal) or PowerShell (a key) to report its line.
+     fn ask_for_line(&mut self) -> bool {
+         if self.report_key {
+@@ -1122,6 +1270,9 @@
+         }
+         let pager = self.parser.screen().alternate_screen();
+         self.shell_cursor_queries += fwd.windows(4).filter(|w| *w == b"\x1b[6n").count();
++        if self.shell_cursor_queries > 0 && self.startup_cursor.as_ref().is_some_and(|p| p.expired) {
++            self.finish_startup_cursor(None);
++        }
+         // ConPTY asks its terminal for win32-input-mode; passed on, the terminal would send lig
+         // keys it can't read. lig types plain VT, which ConPTY reads too.
+         if cfg!(windows) {
+@@ -1154,7 +1305,7 @@
+             let next_msg = msgs.peek().map(|&(pos, _)| pos);
+             let Some(pos) = next_msg.into_iter().chain(marks.peek().copied()).min() else { break };
+             w.extend_from_slice(&fwd[at..pos]);
+-            self.parser.process(&fwd[at..pos]);
++            self.process_child_screen(&fwd[at..pos]);
+             at = pos;
+             if next_msg == Some(pos) {
+                 let (_, m) = msgs.next().unwrap();
+@@ -1162,6 +1313,9 @@
+                 self.on_msg(m);
+             } else {
+                 marks.next();
++                if let Some(replay) = self.startup_cursor.as_mut().and_then(|p| p.replay.as_mut()) {
++                    replay.marks.push(replay.bytes.len());
++                }
+                 // The terminal starts a new line at a prompt mark; do it here so vt100 does too.
+                 if self.parser.screen().cursor_position().1 != 0 {
+                     w.extend_from_slice(b"\r\n");
+@@ -1171,7 +1325,7 @@
+         }
+         w.extend_from_slice(&fwd[at..]);
+         self.write_out(&w);
+-        self.parser.process(&fwd[at..]);
++        self.process_child_screen(&fwd[at..]);
+         if before.is_some_and(|b| b != self.screen_state())
+             && let Some(refresh) = &mut self.fish_refresh
+         {
+@@ -1380,6 +1534,7 @@
+             }
+             Msg::PromptEnd => {
+                 self.switch_shell(ShellKind::Bash);
++                self.record_startup_prompt();
+                 let screen = self.parser.screen();
+                 let (row, col) = screen.cursor_position();
+                 let prefix = screen.contents_between(row, 0, row, col);
+@@ -1760,6 +1915,7 @@
+     /// cmd's output paused after its prompt marker: the input starts at the cursor.
+     fn prompt_settled(&mut self) {
+         self.prompt_pending = false;
++        self.record_startup_prompt();
+         let screen = self.parser.screen();
+         let (row, col) = screen.cursor_position();
+         let prefix = screen.contents_between(row, 0, row, col);
+@@ -1777,7 +1933,7 @@
+ 
+     /// The popup may be shown now (the shell is editing a line, nothing hides it).
+     fn can_show(&self) -> bool {
+-        self.editing && !self.hidden && !self.parser.screen().alternate_screen() && !self.foreign
++        !self.awaiting_startup_cursor() && self.editing && !self.hidden && !self.parser.screen().alternate_screen() && !self.foreign
+     }
+ 
+     /// Enter may be held back to act on up-to-date suggestions.
+@@ -1964,6 +2120,13 @@
+     fn on_resize(&mut self) {
+         let Some((rows, cols)) = term::size() else { return };
+         self.shell_pty.resize(rows, cols);
++        if self.startup_cursor.as_ref().is_some_and(|p| p.expired) {
++            self.finish_startup_cursor(None);
++        }
++        if let Some(probe) = &mut self.startup_cursor {
++            // Its reply is for the old geometry. Consume it before resize asks again.
++            probe.replay = None;
++        }
+         let ask_at = Instant::now() + RESIZE_SETTLE;
+         match &mut self.resync {
+             Some(r) => {
+@@ -1986,6 +2149,9 @@
+ 
+     fn resync_wake(&self) -> Option<Instant> {
+         let r = self.resync.as_ref()?;
++        if let Some(probe) = &self.startup_cursor {
++            return Some(probe.deadline);
++        }
+         Some(match r.asked {
+             Some(at) => at + CURSOR_REPORT_WAIT,
+             // Waiting for the shell's own answers: look again shortly.
+@@ -1995,6 +2161,9 @@
+     }
+ 
+     fn resync_tick(&mut self) {
++        if self.startup_cursor.is_some() {
++            return;
++        }
+         let now = Instant::now();
+         let pager = self.parser.screen().alternate_screen();
+         let Some(r) = &mut self.resync else { return };
+@@ -2131,6 +2300,10 @@
+     }
+ 
+     fn render(&mut self) {
++        if self.awaiting_startup_cursor() {
++            self.dirty = false;
++            return;
++        }
+         // The model is about to move (see `Resync`): draw once it has.
+         if self.resync.is_some() {
+             self.mark_dirty();
+@@ -2145,7 +2318,7 @@
+         if !stuck.is_empty() {
+             self.erase(&mut w);
+             w.extend_from_slice(&stuck);
+-            self.parser.process(&stuck);
++            self.process_child_screen(&stuck);
+         }
+         let fresh = self.visible();
+         if fresh {
+@@ -2286,6 +2459,37 @@
+     }
+ 
+     #[test]
++    fn startup_probe_passes_input_and_owns_only_the_cursor_report() {
++        let mut probe = StartupCursor {
++            deadline: Instant::now() + CURSOR_REPORT_WAIT,
++            partial: Vec::new(),
++            paste: false,
++            expired: false,
++            replay: None,
++        };
++        assert_eq!(probe.input(b"one\x1b[3;"), (b"one".to_vec(), None));
++        assert_eq!(probe.input(b"4Rtwo"), (b"two".to_vec(), Some((3, 4))));
++        assert!(probe.partial.is_empty());
++        assert_eq!(probe.input(b"\x1b[20"), (Vec::new(), None));
++        let literal = b"\x1b[200~\x1b[9;9R\x1b[201~";
++        assert_eq!(probe.input(b"0~\x1b[9;9R\x1b[201~\x1b[5;6R"), (literal.to_vec(), Some((5, 6))));
++    }
++
++    #[test]
++    fn startup_replay_repositions_prompt_without_emitting_output() {
++        let replay = OriginReplay {
++            bytes: b"startup$ command".to_vec(),
++            marks: vec![7],
++            prompt: Some(9),
++        };
++        let (parser, prompt) = replay.rebase(24, 80, (7, 3));
++        let prompt = prompt.unwrap();
++        assert_eq!((prompt.row, prompt.col), (7, 2));
++        assert_eq!(prompt.prefix, "$ ");
++        assert_eq!(parser.screen().cursor_position(), (7, 9));
++    }
++
++    #[test]
+     fn startup_cursor_report_preserves_typeahead_and_other_replies() {
+         let mut input = b"git \x1b[?1;2c\x1b[12;24".to_vec();
+         assert_eq!(take_cursor_report(&mut input), None);
+@@ -1642,5 +1796,7 @@
+-            if self.bindings.action(&key) == Some(Action::Toggle) && self.can_show() {
++            let toggle = self.bindings.has_action(&key, Action::Toggle);
++            let next = self.bindings.has_action(&key, Action::Next);
++            if toggle && self.can_show() && (!self.popup_open() || !next) {
+                 self.toggle();
+                 redraw = true;
+                 continue;
+             }
+
+--- a/src/keys.rs
++++ b/src/keys.rs
+@@ -418,4 +418,8 @@
+         }
+         Bindings(v)
+     }
++
++    pub fn has_action(&self, key: &Key, action: Action) -> bool {
++        self.0.iter().any(|(bound, candidate)| bound == key && *candidate == action)
++    }
+ 
+     pub fn action(&self, key: &Key) -> Option<Action> {
+--- a/src/term.rs
++++ b/src/term.rs
+@@ -1,11 +1,9 @@
+ //! The terminal lig runs in: its size, raw mode, reading keys and writing output.
+ //! Unix uses the tty (termios, `SIGWINCH`); Windows uses the console in virtual terminal mode.
+ 
+-use std::time::Duration;
+-
+ use anyhow::Result;
+ 
+-pub use imp::{RawMode, is_terminal, read, read_timeout, size, watch_resize, write};
++pub use imp::{RawMode, is_terminal, read, size, watch_resize, write};
+ 
+ #[cfg(unix)]
+ mod imp {
+@@ -57,16 +55,6 @@
+         }
+     }
+ 
+-    /// Input that arrives within `timeout`, if any.
+-    pub fn read_timeout(buf: &mut [u8], timeout: Duration) -> Option<usize> {
+-        let mut fd = libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 };
+-        let ready = unsafe { libc::poll(&mut fd, 1, timeout.as_millis().max(1) as i32) };
+-        if ready <= 0 || fd.revents & libc::POLLIN == 0 {
+-            return None;
+-        }
+-        read(buf).ok().filter(|&n| n > 0)
+-    }
+-
+     /// Calls `f` after each resize until it returns false.
+     pub fn watch_resize(f: impl Fn() -> bool + Send + 'static) -> Result<()> {
+         let mut signals = signal_hook::iterator::Signals::new([libc::SIGWINCH])?;
+@@ -91,10 +79,9 @@
+ mod imp {
+     use super::*;
+     use std::sync::Mutex;
+-    use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
++    use windows_sys::Win32::Foundation::HANDLE;
+     use windows_sys::Win32::Storage::FileSystem::WriteFile;
+     use windows_sys::Win32::System::Console::*;
+-    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+ 
+     fn stdin() -> HANDLE {
+         unsafe { GetStdHandle(STD_INPUT_HANDLE) }
+@@ -194,44 +181,12 @@
+         Ok(len)
+     }
+ 
+-    /// Whether a key is waiting; other console events (focus, …) are dropped so `read` won't block.
+-    fn key_waiting() -> bool {
+-        let mut records: [INPUT_RECORD; 64] = unsafe { std::mem::zeroed() };
+-        let mut n = 0u32;
+-        if unsafe { PeekConsoleInputW(stdin(), records.as_mut_ptr(), records.len() as u32, &mut n) } == 0 {
+-            return false;
+-        }
+-        let key = |r: &INPUT_RECORD| r.EventType == KEY_EVENT as u16 && unsafe { r.Event.KeyEvent.bKeyDown } != 0;
+-        if records[..n as usize].iter().any(key) {
+-            return true;
+-        }
+-        let mut read = 0u32;
+-        unsafe { ReadConsoleInputW(stdin(), records.as_mut_ptr(), n, &mut read) };
+-        false
+-    }
+-
+-    /// Input that arrives within `timeout`, if any.
+-    pub fn read_timeout(buf: &mut [u8], timeout: Duration) -> Option<usize> {
+-        let deadline = std::time::Instant::now() + timeout;
+-        loop {
+-            let left = deadline.saturating_duration_since(std::time::Instant::now());
+-            if left.is_zero()
+-                || unsafe { WaitForSingleObject(stdin(), left.as_millis().max(1) as u32) } != WAIT_OBJECT_0
+-            {
+-                return None;
+-            }
+-            if key_waiting() {
+-                return read(buf).ok().filter(|&n| n > 0);
+-            }
+-        }
+-    }
+-
+     /// Calls `f` after each resize until it returns false (the console has no resize signal).
+     pub fn watch_resize(f: impl Fn() -> bool + Send + 'static) -> Result<()> {
+         std::thread::spawn(move || {
+             let mut last = size();
+             loop {
+-                std::thread::sleep(Duration::from_millis(120));
++                std::thread::sleep(std::time::Duration::from_millis(120));
+                 let now = size();
+                 if now != last {
+                     last = now;
