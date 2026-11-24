@@ -37,7 +37,7 @@ _zqs_cache_cli_completion() {
     _zqs_write_cli_completion "$tool" "$cache_file" "$fallback_file" &!
   fi
 }
-
+#TODO verify if no more needed
 # Docker aliases from Oh My Zsh's docker plugin.
 alias dbl='docker build'
 alias dcin='docker container inspect'

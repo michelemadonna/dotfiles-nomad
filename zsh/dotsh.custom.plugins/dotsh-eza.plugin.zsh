@@ -30,10 +30,10 @@ if (( $+commands[eza] )); then
      --group-directories-first --color-scale "${eza_args[@]}"
  }
  alias ls=_zqs_eza_ls
- alias lls='eza --icons --git --group --time-style=long-iso --group-directories-first --color-scale -bghHliS@Z --time-style=long-iso'
- alias ll='eza --icons --git --group --time-style=long-iso --group-directories-first --color-scale -las modified'
+ alias lls='eza -A --icons --git --group --time-style=long-iso --group-directories-first --color-scale -bghHliS@Z --time-style=long-iso'
+ alias ll='eza -A --icons --git --group --time-style=long-iso --group-directories-first --color-scale -las modified'
 elif (( $+commands[exa] )); then
- alias ls='exa --icons --git --group --time-style=long-iso --group-directories-first --color-scale'
- alias lls='exa --icons --git --group --time-style=long-iso --group-directories-first --color-scale -bghHliS@Z --time-style=long-iso'
- alias ll='exa --icons --git --group --time-style=long-iso --group-directories-first --color-scale -las modified'
+ alias ls='exa -A --icons --git --group --time-style=long-iso --group-directories-first --color-scale'
+ alias lls='exa -A --icons --git --group --time-style=long-iso --group-directories-first --color-scale -bghHliS@Z --time-style=long-iso'
+ alias ll='exa -A --icons --git --group --time-style=long-iso --group-directories-first --color-scale -las modified'
 fi

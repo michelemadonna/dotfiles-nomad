@@ -4,6 +4,37 @@
   di = diff
   st = status
   br = branch
+  gs = status -sb
+  gd = diff
+  gds = diff --staged
+  gl = log --oneline -20
+  gp = pull --ff-only
+  changed = diff --stat
+  undo = restore .
+  amend = commit --amend --no-edit
+  # Remotes
+  remotes = remote -v
+  branches = branch -avv
+
+  # Aggiornamento dal repository originale
+  fu = fetch upstream --prune
+  fo = fetch origin --prune
+  sync = !git fetch upstream --prune && git switch main && git merge --ff-only upstream/main
+  publish = push -u origin HEAD
+  # Gestione branch
+  new = switch -c
+  sw = switch
+  main = switch main
+  delete = branch -d
+  # Modifiche e cronologia
+  staged = diff --cached
+  last = log -1 --stat
+  graph = log --graph --decorate --oneline --all
+  ahead = log --oneline upstream/main..HEAD
+  behind = log --oneline HEAD..upstream/main
+
+  # Pulizia
+  prune = remote prune origin
 [color]
   diff = auto
   status = auto

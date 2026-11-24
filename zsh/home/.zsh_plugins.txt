@@ -20,7 +20,7 @@ zdharma-continuum/fast-syntax-highlighting kind:defer
 zsh-users/zsh-history-substring-search
 
 # Local runtime integrations, loaded after init-tools prepares PATH and cache paths.
-#$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-fzf.plugin.zsh kind:defer
+$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-fzf.plugin.zsh kind:defer
 $DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-containers.plugin.zsh kind:defer
 $DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-macos.plugin.zsh kind:defer
 $DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-eza.plugin.zsh kind:defer

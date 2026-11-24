@@ -333,7 +333,7 @@ _zqs_mise_completion() {
     [[ $words[3] == -g ]] && idx=4
 
     if [[ ${words[$idx]} == *@* ]]; then
-      local chosen runtime=${words[$idx]%%@*} versions
+      local runtime=${words[$idx]%%@*} versions
 
       versions=$(command mise ls --installed --quiet "$runtime" |
         awk '{print $2}' | sort -V)
@@ -349,18 +349,8 @@ _zqs_mise_completion() {
         return 1
       fi
 
-      if [[ ${DOTSH_USE_FZF:-true} == true ]] && (( $+commands[fzf] )); then
-        chosen=$(print -r -- "$versions" |
-          FZF_DEFAULT_OPTS= command fzf \
-            --ansi --prompt="Select version > " --height=20 --reverse --cycle \
-            --bind='tab:down,btab:up')
-        if [[ -n $chosen ]]; then
-          compadd -Q -S '' -- "${runtime}@${chosen}"
-        fi
-      else
-        local -a version_candidates=("${(@f)versions}")
-        compadd -Q -S '' -- "${runtime}@"${^version_candidates}
-      fi
+      local -a version_candidates=("${(@f)versions}")
+      compadd -Q -S '' -- "${runtime}@"${^version_candidates}
       return 0
     fi
 

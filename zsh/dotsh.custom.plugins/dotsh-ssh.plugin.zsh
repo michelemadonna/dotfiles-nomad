@@ -104,9 +104,7 @@
 # Oh My Zsh's ssh-agent plugin is loaded standalone through Antidote, so define
 # the host key that Oh My Zsh normally prepares in its full framework startup.
 : "${SHORT_HOST:=${HOST%%.*}}"
-zstyle :omz:plugins:ssh-agent honor-existing yes
-zstyle :omz:plugins:ssh-agent lazy yes
-zstyle :omz:plugins:ssh-agent quiet yes
+
 if [[ -z "$SSH_CONNECTION" && -n "$DISPLAY$WAYLAND_DISPLAY" ]]; then
   for _s in "${XDG_RUNTIME_DIR}/keyring/ssh" "${XDG_RUNTIME_DIR}/gcr/ssh" "${XDG_RUNTIME_DIR}/ssh-agent.socket"; do
     [[ -S "$_s" ]] && export SSH_AUTH_SOCK="$_s" && break
