@@ -1,93 +1,31 @@
 #!/usr/bin/env zsh
 # Docker and kubectl aliases with completion generation only when the CLI changes.
+#TODO copy the config on dotfiles-next also
+if whence -p docker >/dev/null 2>&1; then
 
-typeset -g ZQS_CLI_COMPLETION_DIR="${ZSH_CACHE_DIR}/completions"
+  typeset -gi _zqs_docker_initialized=0
 
-_zqs_write_cli_completion() {
-  emulate -L zsh
-  local tool=$1 cache_file=$2 fallback_file=${3:-}
-  local tmp_file="${cache_file}.${$}.tmp"
-
-  if command "$tool" completion zsh >| "$tmp_file" 2>/dev/null; then
-    command mv -f "$tmp_file" "$cache_file"
-    return 0
-  fi
-
-  command rm -f "$tmp_file"
-  if [[ -n $fallback_file && -r $fallback_file ]]; then
-    command cp "$fallback_file" "$cache_file"
-    return $?
-  fi
-  return 1
-}
-
-_zqs_cache_cli_completion() {
-  emulate -L zsh
-  local tool=$1 cache_file=$2 fallback_file=${3:-}
-  local binary=${commands[$tool]:-}
-  [[ -n $binary ]] || return 1
-
-  [[ -d ${cache_file:h} ]] || command mkdir -p "${cache_file:h}" || return
-
-  if [[ ! -s $cache_file ]]; then
-    _zqs_write_cli_completion "$tool" "$cache_file" "$fallback_file"
-  elif [[ $binary -nt $cache_file ]]; then
-    _zqs_write_cli_completion "$tool" "$cache_file" "$fallback_file" &!
-  fi
-}
-#TODO verify if no more needed
-# Docker aliases from Oh My Zsh's docker plugin.
-alias dbl='docker build'
-alias dcin='docker container inspect'
-alias dcls='docker container ls'
-alias dclsa='docker container ls -a'
-alias dcprune='docker container prune'
-alias dib='docker image build'
-alias dii='docker image inspect'
-alias dils='docker image ls'
-alias dipu='docker image push'
-alias dipru='docker image prune -a'
-alias dirm='docker image rm'
-alias dit='docker image tag'
-alias dlo='docker container logs'
-alias dnc='docker network create'
-alias dncn='docker network connect'
-alias dndcn='docker network disconnect'
-alias dni='docker network inspect'
-alias dnls='docker network ls'
-alias dnprune='docker network prune'
-alias dnrm='docker network rm'
-alias dpo='docker container port'
-alias dps='docker ps'
-alias dpsa='docker ps -a'
-alias dpu='docker pull'
-alias dr='docker container run'
-alias drit='docker container run -it'
-alias drm='docker container rm'
-alias 'drm!'='docker container rm -f'
-alias dsprune='docker system prune'
-alias dst='docker container start'
-alias drs='docker container restart'
-alias dsta='docker stop $(docker ps -q)'
-alias dstp='docker container stop'
-alias dsts='docker stats'
-alias dtop='docker top'
-alias dvi='docker volume inspect'
-alias dvls='docker volume ls'
-alias dvprune='docker volume prune'
-alias dxc='docker container exec'
-alias dxcit='docker container exec -it'
-
-if (( $+commands[docker] )); then
-  _zqs_cache_cli_completion docker "$ZQS_CLI_COMPLETION_DIR/_docker" \
-    "${ANTIDOTE_HOME:-${ZDOTDIR:-$HOME}/.antidote}/github.com/ohmyzsh/ohmyzsh/plugins/docker/completions/_docker"
-  autoload -Uz _docker
-  autoload +X _docker
-  functions[_zqs_docker_completion]=$functions[_docker]
-  _docker() {
+  _zqs_docker_wrapper() {
     local curcontext=$curcontext
     local docker_context=docker
 
+    # Lazy initialization
+    if (( ! _zqs_docker_initialized )); then
+      _cache_cli_completion _docker docker completion zsh ||
+        return 1
+
+      source "$ZSH_COMP_CACHE_DIR/_docker" ||
+        return 1
+
+      (( $+functions[_docker] )) || return 1
+
+      # Restore the wrapper association
+      compdef _zqs_docker_wrapper docker
+
+      _zqs_docker_initialized=1
+    fi
+
+    # Customize the completion context
     if [[ ${words[2]:-} == container && -n ${words[3]:-} ]]; then
       docker_context="docker-container-${words[3]}"
     elif [[ -n ${words[2]:-} ]]; then
@@ -95,15 +33,62 @@ if (( $+commands[docker] )); then
     fi
 
     curcontext=${curcontext/:docker:/:${docker_context}:}
-    _zqs_docker_completion "$@"
+
+    _docker "$@"
   }
-  (( $+functions[compdef] )) && compdef _docker docker dockerd
+
+  compdef _zqs_docker_wrapper docker
+
+
+  # Docker aliases from Oh My Zsh's docker plugin.
+  alias dbl='docker build'
+  alias dcin='docker container inspect'
+  alias dcls='docker container ls'
+  alias dclsa='docker container ls -a'
+  alias dcprune='docker container prune'
+  alias dib='docker image build'
+  alias dii='docker image inspect'
+  alias dils='docker image ls'
+  alias dipu='docker image push'
+  alias dipru='docker image prune -a'
+  alias dirm='docker image rm'
+  alias dit='docker image tag'
+  alias dlo='docker container logs'
+  alias dnc='docker network create'
+  alias dncn='docker network connect'
+  alias dndcn='docker network disconnect'
+  alias dni='docker network inspect'
+  alias dnls='docker network ls'
+  alias dnprune='docker network prune'
+  alias dnrm='docker network rm'
+  alias dpo='docker container port'
+  alias dps='docker ps'
+  alias dpsa='docker ps -a'
+  alias dpu='docker pull'
+  alias dr='docker container run'
+  alias drit='docker container run -it'
+  alias drm='docker container rm'
+  alias 'drm!'='docker container rm -f'
+  alias dsprune='docker system prune'
+  alias dst='docker container start'
+  alias drs='docker container restart'
+  alias dsta='docker stop $(docker ps -q)'
+  alias dstp='docker container stop'
+  alias dsts='docker stats'
+  alias dtop='docker top'
+  alias dvi='docker volume inspect'
+  alias dvls='docker volume ls'
+  alias dvprune='docker volume prune'
+  alias dxc='docker container exec'
+  alias dxcit='docker container exec -it'
+
+  zstyle ':completion:*:*:docker:*' option-stacking yes
+  zstyle ':completion:*:*:docker-*:*' option-stacking yes
+
 fi
 
-if (( $+commands[kubectl] )); then
-  _zqs_cache_cli_completion kubectl "$ZQS_CLI_COMPLETION_DIR/_kubectl"
-  autoload -Uz _kubectl
-  (( $+functions[compdef] )) && compdef _kubectl kubectl k
+if whence -p kubectl >/dev/null 2>&1; then
+  _cache_cli_completion _kubectl kubectl completion zsh
 
   # Kubectl aliases from Oh My Zsh's kubectl plugin.
   alias k=kubectl
@@ -243,8 +228,3 @@ if (( $+commands[kubectl] )); then
   _zqs_build_kubectl_out_alias ky  'kubectl "$@" -o yaml | yh'
   unfunction _zqs_build_kubectl_out_alias
 fi
-
-unfunction _zqs_cache_cli_completion _zqs_write_cli_completion
-
-zstyle ':completion:*:*:docker:*' option-stacking yes
-zstyle ':completion:*:*:docker-*:*' option-stacking yes
