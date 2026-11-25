@@ -16,8 +16,8 @@ if [ -n "${ZSH_VERSION-}" ]; then
   export DOTSH_MISE_REFRESH_SECONDS=${DOTSH_MISE_REFRESH_SECONDS:=5} #0 checks every prompt
   export DOTSH_USE_MISE=${DOTSH_USE_MISE:=true} #true/false
   export DOTSH_OH_MY_POSH_CONFIG="$DOTFILES_DIR/oh-my-posh/custom.omp.json"
-  export DOTSH_SHOW_FASTFETCH=${DOTSH_SHOW_FASTFETCH:=first} #true/false/first
-
+  export DOTSH_SHOW_FASTFETCH=${DOTSH_SHOW_FASTFETCH:=true} #true/false/first
+  export DOTSH_USE_OH_MY_POSH=${DOTSH_USE_OH_MY_POSH:=true} #true/false
 
 
   # macOS may start Zsh without loading the user's login profile.
@@ -25,30 +25,30 @@ if [ -n "${ZSH_VERSION-}" ]; then
   # MacPorts is primary, keep Homebrew isolated for the pkgmng coexistence
   # layer.
   # --- PATH UNIVERSALE (macOS Intel/Apple Silicon, MacPorts/Homebrew, Linux) ---
-  if [[ $OSTYPE == darwin* ]]; then
-    if [[ $CPUTYPE == x86_64 ]]; then
-      if [[ $DOTFILES_INTEL_PACKAGE_MANAGER == homebrew ]]; then
-        path=(
-          /usr/local/bin /usr/local/sbin
-          ${path:#/opt/local/bin}
-          ${path:#/opt/local/sbin}
-        )
-      else
-        path=(
-          /opt/local/bin /opt/local/sbin
-          ${path:#/usr/local/bin}
-          ${path:#/usr/local/sbin}
-        )
-      fi
+if [[ $OSTYPE == darwin* ]]; then
+  if [[ $CPUTYPE == x86_64 ]]; then
+    if [[ $DOTFILES_INTEL_PACKAGE_MANAGER == homebrew ]]; then
+      path=(
+        /usr/local/bin /usr/local/sbin
+        ${path:#/opt/local/bin}
+        ${path:#/opt/local/sbin}
+      )
     else
-      path=(/opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin /usr/local/sbin $path)
+      path=(
+        /opt/local/bin /opt/local/sbin
+        ${path:#/usr/local/bin}
+        ${path:#/usr/local/sbin}
+      )
     fi
-  elif [[ $OSTYPE == linux* ]]; then
-    [[ -d /home/linuxbrew/.linuxbrew/bin ]] && path=(/home/linuxbrew/.linuxbrew/bin $path)
+  else
+    path=(/opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin /usr/local/sbin $path)
   fi
-  
-  path=("$HOME/.local/bin" "$HOME/bin" $path)
-  typeset -gU path PATH
+elif [[ $OSTYPE == linux* ]]; then
+  [[ -d /home/linuxbrew/.linuxbrew/bin ]] && path=(/home/linuxbrew/.linuxbrew/bin $path)
+fi
+
+path=("$HOME/.local/bin" "$HOME/bin" $path)
+typeset -gU path PATH
 
   case ${EDITOR:-} in
     vim|nano|fresh|micro) ;;
