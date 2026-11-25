@@ -23,241 +23,9 @@ if [[ -z ${ASDF_DATA_DIR:-} || $ASDF_DATA_DIR == $mise_legacy_asdf_dir ]]; then
   export ASDF_DATA_DIR=$mise_asdf_compat_dir
 fi
 
-# Cache mise's static activation script. The sourced script still installs the
-# normal precmd/chpwd hook, so hook-env keeps running when the environment may
-# have changed.
-local mise_binary=${commands[$__mise]}
-local mise_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
-local mise_activate_cache="$mise_cache_dir/${__mise}-activate-lazy.zsh"
-local mise_activate_tmp="$mise_activate_cache.${$}.tmp"
-local mise_activate_raw_tmp="$mise_activate_cache.${$}.raw"
-local mise_initial_hook_deferred=0
-local -i mise_context_active=0
-local -a mise_path_before_activation=($path)
-local mise_path_before_rehash=$PATH
-
-_zqs_mise_tool_versions_active() {
-  emulate -L zsh
-  local file=$1 line
-  local -a fields
-
-  [[ -r $file ]] || return 1
-  while IFS= read -r line; do
-    line=${line%%\#*}
-    fields=(${=line})
-    (( $#fields == 0 )) && continue
-    (( $#fields == 2 && $fields[2] == system )) || return 0
-  done < "$file"
-  return 1
-}
-
-_zqs_mise_config_needs_activation() {
-  emulate -L zsh
-  setopt extended_glob
-  local file=$1 line value
-  local in_tools=0 saw_tool=0
-
-  [[ -r $file ]] || return 1
-  while IFS= read -r line; do
-    line=${line%%"#"*}
-    line=${${line##[[:space:]]#}%%[[:space:]]#}
-    [[ -n $line ]] || continue
-
-    if [[ $line == '[tools]' ]]; then
-      in_tools=1
-      continue
-    fi
-    [[ $line != \[*\] ]] || return 0
-    (( in_tools )) || return 0
-    [[ $line == *'='* ]] || return 0
-
-    value=${line#*=}
-    value=${${value##[[:space:]]#}%%[[:space:]]#}
-    (( saw_tool = 1 ))
-    [[ $value == '"system"' || $value == "'system'" || $value == system ]] || return 0
-  done < "$file"
-  (( saw_tool )) && return 1
-  return 1
-}
-
-_zqs_mise_context_needs_activation() {
-  emulate -L zsh
-  local context_dir=$PWD file
-  local global_config=${MISE_GLOBAL_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}
-  local -a local_files=(
-    .mise.toml
-    mise.toml
-    mise.local.toml
-    .node-version
-    .nvmrc
-    .ruby-version
-    .python-version
-    .java-version
-    .go-version
-    .terraform-version
-  )
-
-  while [[ -n $context_dir ]]; do
-    for file in ${local_files[@]}; do
-      [[ -f $context_dir/$file ]] && return 0
-    done
-    if [[ -f $context_dir/.tool-versions ]] &&
-       _zqs_mise_tool_versions_active "$context_dir/.tool-versions"; then
-      return 0
-    fi
-    [[ $context_dir == / ]] && break
-    context_dir=${context_dir:h}
-  done
-
-  [[ -n ${MISE_CONFIG_FILE:-} || -n ${MISE_ENV:-} ||
-     -n ${MISE_DEFAULT_CONFIG_FILENAME:-} ||
-     -n ${MISE_OVERRIDE_CONFIG_FILENAMES:-} ]] && return 0
-  _zqs_mise_config_needs_activation "$global_config" && return 0
-  _zqs_mise_tool_versions_active "$HOME/.tool-versions"
-}
-
-if [[ ! -s $mise_activate_cache || $mise_binary -nt $mise_activate_cache ]]; then
-  [[ -d $mise_cache_dir ]] || command mkdir -p "$mise_cache_dir"
-  if command "$mise_binary" --quiet activate zsh >| "$mise_activate_raw_tmp"; then
-    while IFS= read -r line; do
-      # Keep the hook function and its precmd/chpwd registration, but defer
-      # the initial hook-env call until the first prompt.
-      [[ $line == _mise_hook ]] && continue
-      print -r -- "$line"
-    done < "$mise_activate_raw_tmp" >| "$mise_activate_tmp"
-    command mv -f "$mise_activate_tmp" "$mise_activate_cache"
-    command rm -f "$mise_activate_raw_tmp"
-  else
-    command rm -f "$mise_activate_tmp"
-    command rm -f "$mise_activate_raw_tmp"
-  fi
-fi
-
-if [[ -s $mise_activate_cache ]]; then
-  source "$mise_activate_cache"
-  mise_initial_hook_deferred=1
-  if _zqs_mise_context_needs_activation; then
-    mise_context_active=1
-  else
-    mise_initial_hook_deferred=0
-  fi
-else
-  eval "$(command "$mise_binary" --quiet activate zsh)"
-  _zqs_mise_context_needs_activation && mise_context_active=1
-fi
-typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=$mise_context_active
-
-# `mise activate` embeds the PATH from cache-generation time. Keep its shims
-# first, but do not let a cache prepared by the installer discard paths added
-# later by shell startup (notably ~/.local/bin and Homebrew on macOS).
-path=(${path:|mise_path_before_activation} $mise_path_before_activation)
-typeset -gU path PATH
-[[ $PATH == $mise_path_before_rehash ]] || rehash
-unset mise_path_before_rehash
-
-typeset -ga precmd_functions chpwd_functions
-if (( $+functions[_mise_hook_precmd] && $+functions[_mise_hook_chpwd] )); then
-  # Current Mise already prevents chpwd from being followed by a duplicate
-  # precmd refresh. Use its hooks directly instead of adding a second pair.
-  precmd_functions=(${precmd_functions:#_zqs_mise_precmd_hook})
-  chpwd_functions=(${chpwd_functions:#_zqs_mise_chpwd_hook})
-  unfunction _zqs_mise_precmd_hook _zqs_mise_chpwd_hook 2>/dev/null
-
-  # The cached activation omits Mise's initial hook-env call. Its generated
-  # first-prompt fast path assumes that call already happened, so bypass that
-  # fast path once and let the native hook initialize the environment.
-  (( mise_initial_hook_deferred )) && typeset -gx __MISE_ZSH_PRECMD_RUN=1
-
-  # Avoid starting Mise for every prompt when nothing relevant changed. Keep
-  # chpwd immediate, refresh after every Mise command, detect PATH changes,
-  # and retain a short periodic check for externally edited configs or env.
-  zmodload zsh/datetime
-  local mise_refresh_seconds=${DOTSH_MISE_REFRESH_SECONDS:-5}
-  [[ $mise_refresh_seconds == <-> ]] || mise_refresh_seconds=5
-  typeset -gi _ZQS_MISE_REFRESH_SECONDS=$mise_refresh_seconds
-  typeset -gi _ZQS_MISE_REFRESH_REQUIRED=$mise_initial_hook_deferred
-  typeset -gF _ZQS_MISE_LAST_REFRESH=$EPOCHREALTIME
-  typeset -g _ZQS_MISE_LAST_PATH=$PATH
-
-  _zqs_mise_precmd_hook() {
-    emulate -L zsh
-    local -F now=$EPOCHREALTIME
-
-    if [[ ${__MISE_ZSH_CHPWD_RAN:-0} == 1 ]]; then
-      # Let Mise consume its chpwd marker without invoking hook-env twice.
-      _mise_hook_precmd || return
-      if _zqs_mise_context_needs_activation; then
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=1
-      else
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=0
-      fi
-    else
-      if (( ! ${_ZQS_MISE_REFRESH_REQUIRED:-0} )) &&
-         [[ $PATH == ${_ZQS_MISE_LAST_PATH:-} ]]; then
-        if (( ${_ZQS_MISE_REFRESH_SECONDS:-5} > 0 )) &&
-           (( now - ${_ZQS_MISE_LAST_REFRESH:-0} <
-                ${_ZQS_MISE_REFRESH_SECONDS:-5} )); then
-          return 0
-        fi
-
-        # Outside a Mise context, avoid spawning `mise hook-env` on the
-        # periodic refresh. Recheck the lightweight config/path predicate so
-        # a newly added config still activates on the next refresh interval.
-        if ! _zqs_mise_context_needs_activation &&
-           (( ! ${_ZQS_MISE_CONTEXT_ACTIVE:-0} )); then
-          typeset -gF _ZQS_MISE_LAST_REFRESH=$now
-          return 0
-        fi
-      fi
-
-      _mise_hook_precmd || return
-      if _zqs_mise_context_needs_activation; then
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=1
-      else
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=0
-      fi
-    fi
-
-    typeset -g _ZQS_MISE_LAST_PATH=$PATH
-    typeset -gF _ZQS_MISE_LAST_REFRESH=$EPOCHREALTIME
-    typeset -gi _ZQS_MISE_REFRESH_REQUIRED=0
-  }
-
-  precmd_functions=(${precmd_functions/_mise_hook_precmd/_zqs_mise_precmd_hook})
-else
-  # Compatibility fallback for older activation scripts that register the
-  # same `_mise_hook` function for chpwd and precmd.
-  _zqs_mise_chpwd_hook() {
-    _mise_hook || return
-    typeset -g _ZQS_MISE_CHPWD_PWD=$PWD
-    typeset -gi _ZQS_MISE_SKIP_NEXT_PRECMD=1
-  }
-
-  _zqs_mise_precmd_hook() {
-    if (( ${_ZQS_MISE_SKIP_NEXT_PRECMD:-0} )) &&
-        [[ ${_ZQS_MISE_CHPWD_PWD:-} == $PWD ]]; then
-      unset _ZQS_MISE_SKIP_NEXT_PRECMD _ZQS_MISE_CHPWD_PWD
-      return 0
-    fi
-
-    unset _ZQS_MISE_SKIP_NEXT_PRECMD _ZQS_MISE_CHPWD_PWD
-    _mise_hook
-  }
-
-  precmd_functions=(
-    _zqs_mise_precmd_hook
-    ${precmd_functions:#_mise_hook}
-  )
-  chpwd_functions=(
-    _zqs_mise_chpwd_hook
-    ${chpwd_functions:#_mise_hook}
-  )
-fi
-
-unset mise_binary mise_cache_dir mise_activate_cache mise_activate_tmp mise_activate_raw_tmp
-unset mise_initial_hook_deferred mise_refresh_seconds mise_path_before_activation
 unset mise_asdf_compat_dir mise_legacy_asdf_dir
-unset mise_context_active
+
+builtin source "${${(%):-%x}:A:h}/dotsh-mise-performance.plugin.zsh" || return
 
 asdf() {
   command mise --quiet "$@"
@@ -269,25 +37,232 @@ if (( $+functions[mise] )); then
   functions[mise_orig]=$functions[mise]
 fi
 
-# Loading Mise's generated completion script takes roughly 650 ms on this
-# setup. Register it after the first prompt, when Zephyr has initialized
-# compdef, so completion setup does not delay Oh My Posh.
 _dotsh_mise_init_completion() {
   emulate -L zsh
-  local mise_command=${_ZQS_MISE_COMMAND:-mise}
-  local mise_completion_dir="$ZSH_CACHE_DIR/completions"
-  local mise_completion_file="$mise_completion_dir/_$mise_command"
-  local mise_completion_tmp="$mise_completion_file.${$}.tmp"
-  local mise_completion_binary=${commands[$mise_command]}
+  # Register the runtime probes when completion is initialized.
+  # Called by the Mise completion, with the output of a successful version probe.
+  _dotsh_mise_parse_external_versions() {
+    emulate -L zsh
+    local tool=$1 line value prefix
+    local version_pattern='^v?([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?)([[:space:]]|$)'
+    local -a match
 
-  if [[ ! -s $mise_completion_file || $mise_completion_binary -nt $mise_completion_file ]]; then
-    [[ -d $mise_completion_dir ]] || command mkdir -p "$mise_completion_dir"
-    if command "$mise_completion_binary" --quiet completion zsh >| "$mise_completion_tmp"; then
-      command mv -f "$mise_completion_tmp" "$mise_completion_file"
-    else
-      command rm -f "$mise_completion_tmp"
+    for line in ${(f)2}; do
+      value=$line
+      prefix=''
+      case $tool in
+        python) prefix='Python ' ;;
+        deno) prefix='deno ' ;;
+        go) prefix='go version go' ;;
+        rust) prefix='rustc ' ;;
+        ruby)
+          [[ $line == 'ruby '* ]] || continue
+          value=${line#ruby }
+          value=${${value%% *}%p<->}
+          ;;
+        php) prefix='PHP ' ;;
+        lua) prefix='Lua ' ;;
+        julia) prefix='julia version ' ;;
+        dart) prefix='Dart SDK version: ' ;;
+        kotlin)
+          value=${line#info: }
+          prefix='kotlinc-jvm '
+          ;;
+        scala)
+          [[ $line == 'Scala code runner version '* || $line == 'Scala compiler version '* ]] || continue
+          value=${line#* version }
+          ;;
+        elixir) prefix='Elixir ' ;;
+        crystal) prefix='Crystal ' ;;
+        swift)
+          [[ $line == *'Swift version '* ]] || continue
+          value=${line#*Swift version }
+          ;;
+        dotnet) [[ $line == *' ['*']' ]] || continue ;;
+        clang)
+          # Apple Clang versions identify Xcode builds, not LLVM releases.
+          [[ $line == *'clang version '* && $line != 'Apple clang '* ]] || continue
+          value=${line#*clang version }
+          ;;
+        java)
+          [[ $line == 'javac '* ]] || continue
+          value=${line#javac }
+          if [[ $value == 1.8.0_<-> ]]; then
+            value=8.0.${value#1.8.0_}
+          fi
+          ;;
+        npm:typescript) prefix='Version ' ;;
+      esac
+
+      [[ $value == "$prefix"* ]] || continue
+      value=${value#"$prefix"}
+      [[ $value =~ $version_pattern ]] && print -r -- "$match[1]"
+    done
+  }
+
+  _dotsh_mise_external_versions() {
+    emulate -L zsh
+    local tool=$1
+    case $tool in
+      core:(python|node|deno|bun|go|rust|ruby|elixir|zig|swift|dotnet|java)) tool=${tool#core:} ;;
+      nodejs) tool=node ;;
+      golang) tool=go ;;
+      dotnet-core) tool=dotnet ;;
+    esac
+
+    local -a bins probe=(--version)
+    case $tool in
+      python) bins=(python3 python); probe=(-E -S --version) ;;
+      go) bins=(go); probe=(version) ;;
+      rust) bins=(rustc) ;;
+      perl) bins=(perl); probe=(-e 'print "$^V\n"') ;;
+      lua) bins=(lua); probe=(-v) ;;
+      kotlin) bins=(kotlinc); probe=(-version) ;;
+      scala) bins=(scala); probe=(-version) ;;
+      ghc) bins=(ghc); probe=(--numeric-version) ;;
+      dotnet) bins=(dotnet); probe=(--list-sdks) ;;
+      java) bins=(javac); probe=(-version) ;;
+      npm:typescript) bins=(tsc) ;;
+      node|deno|bun|ruby|php|julia|dart|elixir|zig|crystal|haxe|swift|clang) bins=($tool) ;;
+      *) return 0 ;;
+    esac
+
+    local -a homebrew_prefixes
+    local -aU bin_dirs=(/usr/bin /bin)
+    case $OSTYPE in
+      darwin*)
+        if [[ $CPUTYPE == arm64 || $CPUTYPE == aarch64 ]]; then
+          homebrew_prefixes=(/opt/homebrew /usr/local)
+        else
+          homebrew_prefixes=(/usr/local /opt/homebrew)
+        fi
+        bin_dirs+=(${^homebrew_prefixes}/bin /opt/local/bin)
+        ;;
+      linux*)
+        local os_release=/etc/os-release key value
+        local -a distribution_ids
+        [[ -r $os_release ]] || os_release=/usr/lib/os-release
+        [[ -r $os_release ]] || return 0
+        while IFS='=' read -r key value; do
+          case $key in
+            ID|ID_LIKE) distribution_ids+=(${=${(Q)value}}) ;;
+          esac
+        done < "$os_release"
+        (( ${distribution_ids[(I)debian]} || ${distribution_ids[(I)ubuntu]} )) || return 0
+
+        homebrew_prefixes=(/home/linuxbrew/.linuxbrew)
+        bin_dirs+=(/usr/local/bin ${^homebrew_prefixes}/bin)
+        ;;
+      *) return 0 ;;
+    esac
+
+    local formula=$tool prefix developer_dir
+    case $tool in
+      clang) formula=llvm ;;
+      java) formula=openjdk ;;
+      npm:typescript) formula=typescript ;;
+    esac
+
+    # Keg-only and versioned formulae can be installed without links in bin.
+    for prefix in "${homebrew_prefixes[@]}"; do
+      bin_dirs+=("$prefix/opt/$formula/bin" "$prefix/opt/$formula"@*/bin(N-/))
+      if [[ $tool == java && $OSTYPE == darwin* ]]; then
+        bin_dirs+=("$prefix/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin"
+          "$prefix/opt/openjdk"@*/libexec/openjdk.jdk/Contents/Home/bin(N-/))
+      fi
+    done
+
+    case $tool in
+      python)
+        [[ $OSTYPE != darwin* ]] ||
+          bin_dirs+=(/Library/Frameworks/Python.framework/Versions/*/bin(N-/))
+        ;;
+      go)
+        bin_dirs+=(/usr/local/go/bin)
+        [[ $OSTYPE != linux* ]] || bin_dirs+=(/usr/lib/go-*/bin(N-/))
+        ;;
+      swift) bin_dirs+=(/usr/local/swift/usr/bin) ;;
+      dotnet) bin_dirs+=(/usr/share/dotnet /usr/local/share/dotnet) ;;
+      java)
+        if [[ $OSTYPE == darwin* ]]; then
+          bin_dirs+=(/Library/Java/JavaVirtualMachines/*/Contents/Home/bin(N-/))
+        else
+          bin_dirs+=(/usr/lib/jvm/*/bin(N-/))
+        fi
+        ;;
+    esac
+    if [[ $OSTYPE == darwin* && ( $tool == python || $tool == swift ) ]]; then
+      developer_dir=$(/usr/bin/xcode-select -p 2>/dev/null)
     fi
-  fi
+
+    local mise_data_dir=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}
+    local system_mise_data_dir=${MISE_SYSTEM_DATA_DIR:-/usr/local/share/mise}
+    local -a managed_dirs=(
+      "$mise_data_dir" "$system_mise_data_dir" "$HOME/.asdf"
+      "${ASDF_DATA_DIR:-$HOME/.asdf}" "${XDG_DATA_HOME:-$HOME/.local/share}/asdf"
+      ${MISE_INSTALLS_DIR:+"$MISE_INSTALLS_DIR"} ${MISE_SHIMS_DIR:+"$MISE_SHIMS_DIR"}
+      ${MISE_SYSTEM_INSTALLS_DIR:+"$MISE_SYSTEM_INSTALLS_DIR"}
+      ${MISE_SYSTEM_SHIMS_DIR:+"$MISE_SYSTEM_SHIMS_DIR"}
+    )
+    managed_dirs=("${(@)managed_dirs:A}")
+
+    local dir executable real_file root output version
+    local -a candidates
+    local -A probed
+    local probe_path=${(j.:.)bin_dirs}
+    for dir in "${bin_dirs[@]}"; do
+      [[ -d $dir ]] || continue
+      candidates=("$dir/"${^bins})
+      case $tool in
+        python) candidates+=("$dir"/python3.<->(N)) ;;
+        clang) candidates+=("$dir"/clang-<->(N) "$dir"/clang-mp-<->(N)) ;;
+        lua) candidates+=("$dir"/lua<->.<->(N)) ;;
+        php|ruby) candidates+=("$dir/$tool"<->.<->(N) "$dir/$tool"<->(N)) ;;
+      esac
+
+      for executable in "${candidates[@]}"; do
+        [[ -f $executable && -x $executable ]] || continue
+        real_file=${executable:A}
+        if [[ $OSTYPE == darwin* && ( ${real_file:h} == /usr/bin || ${real_file:h} == /bin ) ]]; then
+          case $tool in
+            java|clang) continue ;; # JDK launcher or Apple Clang.
+            python)
+              [[ -n $developer_dir && -x $developer_dir/usr/bin/${real_file:t} ]] || continue
+              ;;
+            swift)
+              [[ -n $developer_dir &&
+                ( -x $developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift ||
+                  -x $developer_dir/usr/bin/swift ) ]] || continue
+              ;;
+          esac
+        fi
+
+        [[ $real_file != */shims/* && $real_file != */.venv/* &&
+          $real_file != *$'\t'* && $real_file != *$'\n'* &&
+          ! $real_file -ef ${commands[mise]:-/dev/null} ]] || continue
+        for root in "${managed_dirs[@]}"; do
+          [[ $real_file == "$root"/* ]] && continue 2
+        done
+        (( ! ${+probed[$real_file]} )) || continue
+        probed[$real_file]=1
+
+        # Version commands should see the system toolchain, not the project or shims.
+        output=$(
+          cd / || exit
+          /usr/bin/env -i HOME="$HOME" PATH="$dir:$probe_path" LC_ALL=C GOTOOLCHAIN=local \
+            DOTNET_CLI_TELEMETRY_OPTOUT=1 ${developer_dir:+DEVELOPER_DIR="$developer_dir"} \
+            "$executable" "${probe[@]}" 2>&1
+        ) || continue
+        for version in ${(f)"$(_dotsh_mise_parse_external_versions "$tool" "$output")"}; do
+          print -r -- "$version"$'\t'"$executable"
+        done
+      done
+    done
+  }
+
+  local mise_command=${_ZQS_MISE_COMMAND:-mise}
+  local mise_completion_file="$ZSH_CACHE_DIR/completions/_$mise_command"
+  _dotsh_mise_prepare_completion_cache "$mise_command" "$mise_completion_file"
 
   typeset -g -A _comps
   if [[ -s $mise_completion_file ]]; then
@@ -299,15 +274,7 @@ _dotsh_mise_init_completion() {
   _comps[$mise_command]=_$mise_command
 
   functions[_mise]=$functions[_zqs_mise_completion]
-
-  unset mise_completion_dir mise_completion_file mise_completion_tmp
-  unset mise_completion_binary
 }
-
-mise-install-usage() {
-  command mise list -q -i usage | grep -q usage || command mise use usage
-}
-
 
 # Wrap mise to update .tool-versions on `mise use`; preserve its native completion
 # for all subcommands outside the custom `mise use` version selector.
@@ -333,31 +300,41 @@ _zqs_mise_completion() {
     [[ $words[3] == -g ]] && idx=4
 
     if [[ ${words[$idx]} == *@* ]]; then
-      local runtime=${words[$idx]%%@*} versions
+      local runtime=${words[$idx]%%@*} version executable
+      local -A version_sources
+      local -a versions specs descriptions
 
-      versions=$(command mise ls --installed --quiet "$runtime" |
-        awk '{print $2}' | sort -V)
+      while IFS= read -r version; do
+        version_sources[$version]=''
+      done < <(MISE_OFFLINE=1 command mise ls --installed --quiet -- "$runtime" |
+        awk 'NF >= 2 && $2 != "system" {print $2}')
 
-      if command mise exec "$runtime@system" -- true >/dev/null 2>&1; then
-        versions=$(printf "%s\n" $versions | grep -vx system)
-        versions="system"$'\n'"$versions"
-      fi
+      while IFS=$'\t' read -r version executable; do
+        if (( ! ${+version_sources[$version]} )); then
+          version_sources[$version]=$executable
+        fi
+      done < <(_dotsh_mise_external_versions "$runtime")
 
-      if [[ -z $versions ]]; then
+      if (( ! $#version_sources )); then
         echo "⚠️ No versions installed for '$runtime'."
         echo "👉 Install with: mise install ${runtime}@<version>"
         return 1
       fi
 
-      local -a version_candidates=("${(@f)versions}")
-      compadd -Q -S '' -- "${runtime}@"${^version_candidates}
+      versions=(${(f)"$(printf '%s\n' "${(@k)version_sources}" | sort -V)"})
+      for version in "${versions[@]}"; do
+        specs+=("$runtime@$version")
+        executable=${version_sources[$version]}
+        descriptions+=("$runtime@$version${executable:+  [detected at $executable]}")
+      done
+      compadd -Q -S '' -V mise-versions -d descriptions -- "${specs[@]}"
       return 0
     fi
 
     local tool_prefix=${words[$idx]}
     local -a installed_tools installed_specs
-    installed_tools=("${(@f)$(command mise ls --installed --quiet |
-      awk -v prefix="$tool_prefix" 'NF && index($1, prefix) == 1 {print $1}' |
+    installed_tools=("${(@f)$(MISE_OFFLINE=1 command mise ls --installed --quiet |
+      awk -v prefix="$tool_prefix" 'NF >= 2 && $2 != "system" && index($1, prefix) == 1 {print $1}' |
       sort -u)}")
     (( ${#installed_tools} )) || return 0
     installed_specs=(${^installed_tools}'@')
@@ -367,11 +344,7 @@ _zqs_mise_completion() {
   _zqs_mise_native_completion "$@"
 }
 
-if (( $+functions[zsh-defer] )); then
-  zsh-defer -m -p _dotsh_mise_init_completion
-else
-  _dotsh_mise_init_completion
-fi
+_dotsh_mise_defer_completion
 
 # Translate mise runtime@version to asdf format and save to .tool-versions
 _mise_runtime_to_asdf() {

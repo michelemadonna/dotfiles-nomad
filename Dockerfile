@@ -153,9 +153,6 @@ RUN mkdir -p \
     fi
 
 RUN cd /home/demo \
-    && mise use -g java@system \
-    && mise use -g python@system \
-    && mise use -g node@system \
     && cd /home/demo/Developer/personal@github/simple-node-hello \
     && mise use node@22.14.0 \
     && cd /home/demo/Developer/work@github/simple-java-maven-app \
