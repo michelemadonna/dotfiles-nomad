@@ -39,6 +39,10 @@ fi
 
 _dotsh_mise_init_completion() {
   emulate -L zsh
+  if (( $+functions[_dotsh_mise_external_versions] )) &&
+     [[ $functions[_mise] == $functions[_dotsh_mise_completion] ]]; then
+    return 0
+  fi
   # Register the runtime probes when completion is initialized.
   typeset -gA _DOTSH_MISE_RUNTIME_BINS=(
     python 'python3 python' node node deno deno bun bun go go rust rustc

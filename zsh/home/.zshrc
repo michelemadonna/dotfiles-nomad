@@ -1,32 +1,53 @@
-# Interactive-shell defaults and optional startup profiling.
+# Interactive Zsh startup. Load the helpers and query SSH first, then prepare
+# the cache, search paths, and plugin styles before loading the Antidote bundle.
+# Zephyr initializes completions before the first prompt. The editor finishes
+# its setup when ZLE starts, before it processes the first key.
+
+# Remove write permission for other users on files created by interactive
+# shells. Load zprof early when its marker file exists to measure startup.
 [[ ! -o interactive ]] || umask o-w
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zmodload zsh/zprof
 fi
 
-#TODO uncomment
-#[[ -t 0 ]] && printf 'Last login: %s on %s\n' "$(LC_ALL=C date '+%a %b %e %H:%M:%S')" "$(tty | sed 's|^/dev/||')"
-#move the cursor at the bottom of the terminal to avoid scrolling when the prompt is printed
-print -n $'\e[9999;1H'
 # Shared cache root for Mise, completions and other Zsh plugins.
 typeset -g ZSH_CACHE_DIR="${ZSH_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zsh}"
 typeset -g ZSH_COMP_CACHE_DIR="${ZSH_CACHE_DIR}/completions"
+[[ ! -d "$ZSH_CACHE_DIR" ]] && mkdir -p "$ZSH_CACHE_DIR"
+[[ ! -d "$ZSH_COMP_CACHE_DIR" ]] && mkdir -p "$ZSH_COMP_CACHE_DIR"
 
-if [[ ! -d "$ZSH_CACHE_DIR" ]]; then
-  mkdir -p "$ZSH_CACHE_DIR"
-fi
-if [[ ! -d "$ZSH_COMP_CACHE_DIR" ]]; then
-  mkdir -p "$ZSH_COMP_CACHE_DIR"
-fi
-
-builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
-builtin source "$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-misc.plugin.zsh"
-
-# ZSH Completion Cache
+# Cache results produced by completion functions under the shared cache root.
 zstyle ':completion:*' use-cache yes
 zstyle ':completion:*' cache-path "$ZSH_CACHE_DIR/zcompcache"
+# Reuse Zephyr's completion dump and audit it only when the cache expires or
+# the completion search path changes.
+zstyle ':zephyr:plugin:completion' use-cache yes
+zstyle ':zephyr:plugin:color' use-cache yes
 
-# FPATH BASE (Before Antidote so compinit can find the completion functions of the package manager)
+builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
+
+# Start the inherited SSH agent query early. The SSH plugin prints its result
+# during bundle loading, before the prompt appears.
+_dotsh_startup_ssh_open
+
+# Lig PRE Must BE HERE
+# >>> lig pre >>>
+_cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh pre
+# <<< lig pre <<<
+
+# Use Zsh prompt escapes for the current time and terminal without starting external commands.
+[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
+
+# Move the cursor to the bottom of the terminal before printing the prompt.
+print -n $'\e[9999;1H'
+
+_dotsh_init_startup_cache
+builtin source "$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-misc.plugin.zsh"
+
+
+# Add package manager completion directories before Antidote loads, when
+# compinit has yet to build its completion table. Keep the first occurrence of
+# each path so a duplicate entry cannot change the search order.
 typeset -gU fpath FPATH
 
 local -a _fn_candidates=()
@@ -47,23 +68,14 @@ elif [[ $OSTYPE == linux* ]]; then
   )
 fi
 
-fpath=(${^_fn_candidates}(N/) $fpath)
-
-unset _fn_candidates
+local -a _fn_dirs=()
+for _fn_dir in "${_fn_candidates[@]}"; do
+  [[ -d $_fn_dir && ! -L $_fn_dir ]] && _fn_dirs+=("$_fn_dir")
+done
+fpath=("${_fn_dirs[@]}" "${fpath[@]}")
+unset _fn_candidates _fn_dirs _fn_dir
 
 path=("$HOME/.local/bin" $path)
-
-
-
-
-# Lig PRE Must BE HERE
-# >>> lig pre >>>
-#_cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh pre
-# <<< lig pre <<<
-
-# Reuse Zephyr's completion dump and audit it only when the cache expires or
-# the completion search path changes.
-zstyle ':zephyr:plugin:completion' use-cache yes
 
 # Completion styles
 # Matching
@@ -82,13 +94,13 @@ zstyle ":completion:*:*:(bat|micro|nano|vim|${EDITOR:t}):*" file-sort modificati
 # Options
 zstyle ':completion:*:options' list-colors '=--*=38;5;81' '=-*=38;5;114'
 
-
-#TODO Add every key in in .ssh using the parameter indentities
+# Reuse an inherited SSH agent and skip adding identities during startup.
 zstyle :omz:plugins:ssh-agent honor-existing yes
 zstyle :omz:plugins:ssh-agent lazy yes
 zstyle :omz:plugins:ssh-agent quiet yes
 
-# 4. ANTIDOTE (Auto-install + Bundle statico)
+# Prefer an installed copy of Antidote and fall back to a checkout in ZDOTDIR.
+# Antidote generates a static bundle from the manifest and reuses it on startup.
 for _antidote_dir in \
   /opt/homebrew/opt/antidote/share/antidote \
   /usr/local/opt/antidote/share/antidote \
@@ -108,41 +120,99 @@ source "${ANTIDOTE_HOME}/antidote.zsh"
 # defer options. None of the deferred plugins need to rerun precmd on load.
 zstyle ':antidote:bundle:*' defer-options '-m'
 zstyle ':antidote:static' file "$ZSH_CACHE_DIR/antidote-bundle-no-precmd.zsh"
+typeset -g ZSH_AUTOSUGGEST_MANUAL_REBIND=1
 antidote load
+
+_dotsh_startup_ssh_close
+_dotsh_use_warm_compdump
+_dotsh_compile_bundle_plugins
 
 #fpath=("$ZSH_COMP_CACHE_DIR" $fpath)
 
-# OH MY POSH
-if (( $+commands[oh-my-posh1] )); then
-  if [[ -f "$DOTSH_OH_MY_POSH_CONFIG" ]]; then
-    if (( $+functions[dotsh-init-oh-my-posh] )); then
+# Initialize colors here when the first ZLE hook cannot do it.
+if [[ ! -o zle || ! -t 0 || -v ZSH_EXECUTION_STRING ]]; then
+  _dotsh_init_colors
+fi
+
+# Load Oh My Posh only when explicitly enabled and the executable is available.
+if [[ ${DOTSH_USE_OH_MY_POSH:-false} == true ]] &&
+   (( $+commands[oh-my-posh] )); then
+  local omp_plugin="$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-oh-my-posh.plugin.zsh"
+  if [[ -f $DOTSH_OH_MY_POSH_CONFIG ]]; then
+    if [[ -r $omp_plugin ]] &&
+       builtin source "$omp_plugin" &&
+       (( $+functions[dotsh-init-oh-my-posh] )); then
       dotsh-init-oh-my-posh
     else
-      eval "$(oh-my-posh init zsh --config "$DOTSH_OH_MY_POSH_CONFIG")"
+      eval "$(command oh-my-posh init zsh --config "$DOTSH_OH_MY_POSH_CONFIG")"
     fi
   else
-    eval "$(oh-my-posh init zsh)"
+    eval "$(command oh-my-posh init zsh)"
   fi
 else
   #TODO improve with git_status and git_prompt_info
   PROMPT='%F{cyan}%n@%m%f %F{blue}%~%f %# '
 fi
 
-# 6. KEYBINDING FRECCE & UPDATE ALL-IN-ONE
-zsh-defer -m bindkey "${terminfo[kcuu1]}" history-substring-search-up
-zsh-defer -m bindkey "${terminfo[kcud1]}" history-substring-search-down
+# Clear the completion list shown before menu selection starts. The redraw
+# keeps the current command line. In vi insert mode, also keep Escape's
+# normal transition to vi command mode.
+_dotsh_dismiss_completion_list() {
+  zle -R -c
+  if [[ $WIDGET == _dotsh_dismiss_completion_list_vi ]]; then
+    zle vi-cmd-mode
+  fi
+}
 
-# Add flags to existing aliases.
-alias ls="${aliases[ls]:-ls} -A"
+# Run once when ZLE begins editing its first line. Draw the prompt, then load
+# Zephyr's editor, colors if still pending, and history search before reading
+# input. Bind both arrow-key sequences, run the newly installed line-init
+# widget for this first line, and make Mise completion ready for the first Tab.
+_dotsh_init_first_zle_line() {
+  add-zle-hook-widget -d line-init _dotsh_init_first_zle_line
+  zle -R
+  [[ ! -r $ZEPHYR_HOME/plugins/editor/editor.plugin.zsh ]] ||
+    builtin source "$ZEPHYR_HOME/plugins/editor/editor.plugin.zsh"
+  (( ! $+functions[_dotsh_init_colors] )) || _dotsh_init_colors
+  if [[ -n $_dotsh_history_dir ]]; then
+    builtin source "$_dotsh_history_dir/zsh-history-substring-search.plugin.zsh"
+  fi
+  unset _dotsh_history_dir
+  zmodload zsh/terminfo
+  [[ -z ${terminfo[kcuu1]} ]] || bindkey "${terminfo[kcuu1]}" history-substring-search-up
+  [[ -z ${terminfo[kcud1]} ]] || bindkey "${terminfo[kcud1]}" history-substring-search-down
+  # The prompt can be visible before application keypad mode is enabled.
+  bindkey $'\e[A' history-substring-search-up
+  bindkey $'\e[B' history-substring-search-down
+  if zmodload -e zsh/complist; then
+    # An unselected list uses the editor keymap. Active selection and paged
+    # lists use their own keymaps and already know how to handle send-break.
+    zle -N _dotsh_dismiss_completion_list
+    zle -N _dotsh_dismiss_completion_list_vi _dotsh_dismiss_completion_list
+    bindkey -M emacs '^[' _dotsh_dismiss_completion_list
+    bindkey -M viins '^[' _dotsh_dismiss_completion_list_vi
+    bindkey -M vicmd '^[' _dotsh_dismiss_completion_list
+    bindkey -M menuselect '^[' send-break
+    bindkey -M listscroll '^[' send-break
+  fi
+  if [[ $widgets[zle-line-init] == user:zle-line-init ]]; then
+    zle zle-line-init
+  fi
+  if (( $+functions[_dotsh_mise_init_completion] && $+functions[compdef] )); then
+    _dotsh_mise_init_completion
+  fi
+}
+autoload -Uz add-zle-hook-widget
+add-zle-hook-widget line-init _dotsh_init_first_zle_line
+
 (( $+commands[python3] )) && alias python='command python3'
 
 # Bracketed paste on: multi-line pastes do NOT auto-run
 set zle_bracketed_paste
 ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(bracketed-paste)
 
-# Don't beep, don't autocorrect agent commands into garbage
+# Disable spelling correction for command names and arguments.
 unsetopt CORRECT CORRECT_ALL
-
 
 # GPG / PINENTRY
 [[ -t 0 && -n $TTY ]] && export GPG_TTY=$TTY
@@ -170,7 +240,7 @@ fi
 
 #LIG POST Must BE HERE
 # >>> lig post >>>
-#zsh-defer -m -p _cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh post
+zsh-defer -m -p _cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh post
 # <<< lig post <<<
 # Autosuggestions otherwise waits for the next real precmd to bind widgets.
 # Its dependencies and Lig's widget hooks have run when this task executes.

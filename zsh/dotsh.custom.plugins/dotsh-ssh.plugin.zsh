@@ -117,6 +117,16 @@ fi
 # Print the current SSH keys in memory, and load any local private keys into the agent
 ssh-ids() {
   print '\nCurrent SSH Keys:'
+  if [[ -n ${_dotsh_startup_ssh_fd-} && -S ${SSH_AUTH_SOCK-} &&
+        $SSH_AUTH_SOCK == $_dotsh_startup_ssh_socket ]]; then
+    local reply
+    IFS= read -r -d '' -u "$_dotsh_startup_ssh_fd" reply || :
+    reply=${reply%$'\n'}
+    case ${reply##*$'\n'} in
+      0) print -r -- "${${reply%$'\n'*}%$'\n'}"; return 0 ;;
+      <->) print -P "%F{yellow}Nessuna chiave SSH in memoria (caricamento lazy).%f"; return 0 ;;
+    esac
+  fi
   if [[ ! -S ${SSH_AUTH_SOCK-} ]] || ! ssh-add -l 2>/dev/null; then
     print -P "%F{yellow}Nessuna chiave SSH in memoria (caricamento lazy).%f"
   fi
