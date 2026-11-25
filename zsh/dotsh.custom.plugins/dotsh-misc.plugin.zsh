@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 # Some miscellaneous aliases and functions for Zsh.
 alias _dig=dogggo _ping=gping _hex=hexyl _curl=http _ps=procs _top=btop
-alias _ls='command ls' nodejs='command node'
+alias _ls='command ls' nodejs='node'
 
 myip() {
   local ipv4 ipv6
@@ -17,14 +17,14 @@ myip() {
 
 
 
-if [[ ${DOTSH_ENABLE_ALLAFINE:-false} == true ]]; then
-  allafine() {
-    zle accept-line
-    print -n $'\e[9999;1H'
-  }
-  zle -N allafine
-  bindkey '^M' allafine
-fi
+#if [[ ${DOTSH_ENABLE_ALLAFINE:-false} == true ]]; then
+#  allafine() {
+#    zle accept-line
+#    print -n $'\e[9999;1H'
+#  }
+#  zle -N allafine
+#  bindkey '^M' allafine
+#fi
 
 function app-reset-permissions() {
   if (( $# == 0 )); then

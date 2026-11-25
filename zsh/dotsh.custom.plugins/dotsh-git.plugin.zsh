@@ -13,6 +13,13 @@ if (( $+commands[git] )); then
   		unset _dotsh_native_git_completion _dotsh_completion_dir
 	fi
 
+	zstyle ':completion:*:*:git-checkout:*:*' group-order local-branches remote-branches tags
+	zstyle ':completion:*:local-branches' list-colors '=*=38;5;78'
+	zstyle ':completion:*:local-branches' sort false
+	zstyle ':completion:*:remote-branches' list-colors '=*=38;5;141'
+	zstyle ':completion:*:commits' sort false
+	zstyle ':completion:*:tags' list-colors '=*=38;5;214'
+
 	zstyle ':completion:*:*:git*:*:descriptions' \
 	  format '%F{yellow}[%d]%f'
 	zstyle ':completion:*:git-checkout:*' sort false
@@ -25,11 +32,11 @@ if (( $+commands[git] )); then
 	  '=(#b)(HEAD*)=0=31' \
 	  '=(#b)(*)=0=32'
 
-	# Restore the full Git candidate set after runtime initialization.
-	zstyle -d ':completion:*:git-*:argument-rest:heads' ignored-patterns
-	zstyle -d ':completion:*:git-*:argument-rest:heads-local' ignored-patterns
-	zstyle -d ':completion:*:git-*:argument-rest:heads-remote' ignored-patterns
-	zstyle -d ':completion:*:git-*:argument-rest:commits' ignored-patterns
-	zstyle -d ':completion:*:git-*:argument-rest:commit-objects' ignored-patterns
-	zstyle -d ':completion:*:git-*:argument-rest:recent-branches' ignored-patterns
+	## Restore the full Git candidate set after runtime initialization.
+	#zstyle -d ':completion:*:git-*:argument-rest:heads' ignored-patterns
+	#zstyle -d ':completion:*:git-*:argument-rest:heads-local' ignored-patterns
+	#zstyle -d ':completion:*:git-*:argument-rest:heads-remote' ignored-patterns
+	#zstyle -d ':completion:*:git-*:argument-rest:commits' ignored-patterns
+	#zstyle -d ':completion:*:git-*:argument-rest:commit-objects' ignored-patterns
+	#zstyle -d ':completion:*:git-*:argument-rest:recent-branches' ignored-patterns
 fi

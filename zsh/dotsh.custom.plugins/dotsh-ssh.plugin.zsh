@@ -8,9 +8,9 @@
 #	local agent_status agent_keys key fingerprint fingerprint_line
 #	local -a ssh_add_options
 #	local -a keys
-#	typeset -g _ZQS_SSH_KEYS=
-#	typeset -gi _ZQS_SSH_KEYS_STATUS=2
-#	typeset -gi _ZQS_SSH_KEYS_VALID=0
+#	typeset -g _DOTSH_SSH_KEYS=
+#	typeset -gi _DOTSH_SSH_KEYS_STATUS=2
+#	typeset -gi _DOTSH_SSH_KEYS_VALID=0
 #
 #	# A fake HOME must not reuse host agents or import keys from macOS Keychain.
 #	if (( $+commands[keychain] )) && [[ ${DOTFILES_FAKE_HOME:-} != $HOME ]]; then
@@ -42,9 +42,9 @@
 #	fi
 #
 #	(( agent_status == 2 )) && return 1
-#	_ZQS_SSH_KEYS=$agent_keys
-#	_ZQS_SSH_KEYS_STATUS=$agent_status
-#	(( agent_status == 0 )) && _ZQS_SSH_KEYS_VALID=1
+#	_DOTSH_SSH_KEYS=$agent_keys
+#	_DOTSH_SSH_KEYS_STATUS=$agent_status
+#	(( agent_status == 0 )) && _DOTSH_SSH_KEYS_VALID=1
 #
 #	if (( agent_status == 1 )); then
 #		if [[ $OSTYPE == darwin* && ${DOTFILES_FAKE_HOME:-} != $HOME ]]; then
@@ -55,9 +55,9 @@
 #			fi
 #			agent_keys=$(ssh-add -l 2>/dev/null)
 #			agent_status=$?
-#			_ZQS_SSH_KEYS=$agent_keys
-#			_ZQS_SSH_KEYS_STATUS=$agent_status
-#			(( agent_status == 0 )) && _ZQS_SSH_KEYS_VALID=1
+#			_DOTSH_SSH_KEYS=$agent_keys
+#			_DOTSH_SSH_KEYS_STATUS=$agent_status
+#			(( agent_status == 0 )) && _DOTSH_SSH_KEYS_VALID=1
 #		fi
 #
 #		keys=(~/.ssh/**/*id_(rsa|dsa|ecdsa|ed25519)(N.))
@@ -75,7 +75,7 @@
 #			fi
 #			if [[ $agent_keys != *"$fingerprint"* ]] && ssh-add $ssh_add_options -- "$key"; then
 #				agent_keys+=$'\n'$fingerprint
-#				_ZQS_SSH_KEYS_VALID=0
+#				_DOTSH_SSH_KEYS_VALID=0
 #			fi
 #		done
 #	fi
@@ -90,14 +90,14 @@
 #if [[ ${DOTSH_SSH_SHOW_KEY:-false} == true ]]; then
 #	print
 #	print 'Current SSH Keys:'
-#	if (( ${_ZQS_SSH_KEYS_VALID:-0} )) && (( ${_ZQS_SSH_KEYS_STATUS:-2} == 0 )); then
-#		print -r -- "$_ZQS_SSH_KEYS"
+#	if (( ${_DOTSH_SSH_KEYS_VALID:-0} )) && (( ${_DOTSH_SSH_KEYS_STATUS:-2} == 0 )); then
+#		print -r -- "$_DOTSH_SSH_KEYS"
 #	else
 #		ssh-add -l
 #	fi
 #	print
 #fi
-#unset _ZQS_SSH_KEYS _ZQS_SSH_KEYS_STATUS _ZQS_SSH_KEYS_VALID
+#unset _DOTSH_SSH_KEYS _DOTSH_SSH_KEYS_STATUS _DOTSH_SSH_KEYS_VALID
 #
 
 # SSH-AGENT (macOS Keychain, Linux Desktop Keyring/KWallet, Server SSH)

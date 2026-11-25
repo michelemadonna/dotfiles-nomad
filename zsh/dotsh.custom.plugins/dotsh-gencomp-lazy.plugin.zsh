@@ -5,39 +5,39 @@
 fpath+=("$GENCOMPL_FPATH")
 typeset -gU fpath
 
-typeset -gA _ZQS_GENCOMP_FAILED
+typeset -gA _DOTSH_GENCOMP_FAILED
 
 # Completions created by the former automatic mode may still live in dotsh's
 # standard completion cache and get registered by compinit. Keep the files,
 # but detach only RobSis-generated definitions so TAB retains its normal
 # fallback and Shift-TAB remains the explicit activation path.
-typeset _zqs_gencomp_legacy_file _zqs_gencomp_legacy_program
-typeset _zqs_gencomp_migration_index="$ZSH_CACHE_DIR/.gencomp-legacy-programs-v1"
-if [[ -s $_zqs_gencomp_migration_index ]]; then
-  while IFS= read -r _zqs_gencomp_legacy_program; do
-    [[ -n $_zqs_gencomp_legacy_program ]] && compdef -d "$_zqs_gencomp_legacy_program"
-  done < "$_zqs_gencomp_migration_index"
+typeset _dotsh_gencomp_legacy_file _dotsh_gencomp_legacy_program
+typeset _dotsh_gencomp_migration_index="$ZSH_CACHE_DIR/.gencomp-legacy-programs-v1"
+if [[ -s $_dotsh_gencomp_migration_index ]]; then
+  while IFS= read -r _dotsh_gencomp_legacy_program; do
+    [[ -n $_dotsh_gencomp_legacy_program ]] && compdef -d "$_dotsh_gencomp_legacy_program"
+  done < "$_dotsh_gencomp_migration_index"
 else
-  typeset _zqs_gencomp_migration_tmp="$_zqs_gencomp_migration_index.${$}.tmp"
-  : >| "$_zqs_gencomp_migration_tmp" 2>/dev/null || true
-  for _zqs_gencomp_legacy_file in "$ZSH_CACHE_DIR/completions"/_*(N-.); do
+  typeset _dotsh_gencomp_migration_tmp="$_dotsh_gencomp_migration_index.${$}.tmp"
+  : >| "$_dotsh_gencomp_migration_tmp" 2>/dev/null || true
+  for _dotsh_gencomp_legacy_file in "$ZSH_CACHE_DIR/completions"/_*(N-.); do
     command grep -q \
       'automatically generated with http://github.com/RobSis/zsh-completion-generator' \
-      "$_zqs_gencomp_legacy_file" 2>/dev/null || continue
-    _zqs_gencomp_legacy_program=${${_zqs_gencomp_legacy_file:t}#_}
-    compdef -d "$_zqs_gencomp_legacy_program"
-    print -r -- "$_zqs_gencomp_legacy_program" >> "$_zqs_gencomp_migration_tmp" 2>/dev/null || true
+      "$_dotsh_gencomp_legacy_file" 2>/dev/null || continue
+    _dotsh_gencomp_legacy_program=${${_dotsh_gencomp_legacy_file:t}#_}
+    compdef -d "$_dotsh_gencomp_legacy_program"
+    print -r -- "$_dotsh_gencomp_legacy_program" >> "$_dotsh_gencomp_migration_tmp" 2>/dev/null || true
   done
-  if [[ -s $_zqs_gencomp_migration_tmp ]]; then
-    command mv -f -- "$_zqs_gencomp_migration_tmp" "$_zqs_gencomp_migration_index"
+  if [[ -s $_dotsh_gencomp_migration_tmp ]]; then
+    command mv -f -- "$_dotsh_gencomp_migration_tmp" "$_dotsh_gencomp_migration_index"
   else
-    command rm -f -- "$_zqs_gencomp_migration_tmp"
+    command rm -f -- "$_dotsh_gencomp_migration_tmp"
   fi
 fi
-unset _zqs_gencomp_legacy_file _zqs_gencomp_legacy_program
-unset _zqs_gencomp_migration_index _zqs_gencomp_migration_tmp
+unset _dotsh_gencomp_legacy_file _dotsh_gencomp_legacy_program
+unset _dotsh_gencomp_migration_index _dotsh_gencomp_migration_tmp
 
-_zqs_gencomp_generate() {
+_dotsh_gencomp_generate() {
   emulate -L zsh
   setopt pipe_fail
 
@@ -73,7 +73,7 @@ gencomp() {
 
   local program=$1
   local help_arg=${2:---help}
-  _zqs_gencomp_generate "$program" "$help_arg" || {
+  _dotsh_gencomp_generate "$program" "$help_arg" || {
     print -u2 -r -- "gencomp: no options found in '$program $help_arg'"
     return 1
   }
@@ -84,7 +84,7 @@ gencomp() {
   print -r -- "Generated completion: $GENCOMPL_FPATH/_$program"
 }
 
-_zqs_gencomp_for_current_command() {
+_dotsh_gencomp_for_current_command() {
   emulate -L zsh
   setopt extended_glob
 
@@ -94,8 +94,8 @@ _zqs_gencomp_for_current_command() {
 
   if [[ $program == [[:alnum:]_.+-]## &&
         -n ${commands[$program]:-} &&
-        -z ${_ZQS_GENCOMP_FAILED[$program]:-} ]]; then
-    if [[ -s $GENCOMPL_FPATH/$completion ]] || _zqs_gencomp_generate "$program"; then
+        -z ${_DOTSH_GENCOMP_FAILED[$program]:-} ]]; then
+    if [[ -s $GENCOMPL_FPATH/$completion ]] || _dotsh_gencomp_generate "$program"; then
       unfunction "$completion" 2>/dev/null
       autoload -Uz "$completion"
       compdef "$completion" "$program"
@@ -117,7 +117,7 @@ _zqs_gencomp_for_current_command() {
       fi
       return 0
     fi
-    _ZQS_GENCOMP_FAILED[$program]=1
+    _DOTSH_GENCOMP_FAILED[$program]=1
   fi
 
   if [[ ${DOTSH_USE_FZF:-true} == true ]] && (( $+widgets[_fzf_tab_complete_with_dots] )); then
@@ -127,5 +127,5 @@ _zqs_gencomp_for_current_command() {
   fi
 }
 
-zle -N _zqs_gencomp_for_current_command
-dotsh_bindkey _zqs_gencomp_for_current_command Shift+Tab
+zle -N _dotsh_gencomp_for_current_command
+dotsh_bindkey _dotsh_gencomp_for_current_command Shift+Tab

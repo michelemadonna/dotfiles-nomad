@@ -92,8 +92,7 @@ function zsh-update() {
 
   # 2. Rimuove le vecchie cache per-sessione di Oh My Posh.
   [[ -d "$_omp_cache_dir" ]] && rm -f \
-    "$_omp_cache_dir"/zsh.*.omp.cache(N) \
-    "$_omp_cache_dir"/.cache-*.tmp(N)
+    "$_omp_cache_dir"/*(N)  
   
   #[[ -d "$_lig_cache_dir" ]] && rm -f "$_lig_cache_dir"/*(N)
 
@@ -103,12 +102,70 @@ function zsh-update() {
 
   # Remove every compiled Zsh file under the active dotfiles and ZDOTDIR trees.
   rm -f \
+    "$_zsh_cache_dir"/**/.zcompdump*(N.) \
     "$_zdotdir"/**/*.zwc(N.) \
     "$_zdotdir"/**/.*.zwc(N.) \
     "$_dotfiles_zsh_dir"/**/*.zwc(N.) \
     "$_dotfiles_zsh_dir"/**/.*.zwc(N.)
 
   exec zsh -l
+}
+
+# Trace a fresh interactive startup only when explicitly requested.
+zsh-startup-trace() {
+  emulate -L zsh
+  local threshold_ms=${1-}
+  if (( $# != 1 )) || [[ $threshold_ms != <-> && $threshold_ms != <->.<-> ]]; then
+    printf 'Uso: zsh-startup-trace <soglia_ms>\n' >&2
+    return 2
+  fi
+
+  local dir
+  dir=$(command mktemp -d "${TMPDIR:-/tmp}/zsh-trace.XXXXXXXX") || return 1
+  : >"$dir/zshrc.ms"
+  : >"$dir/antidote.ms"
+  : >"$dir/antidote.trace"
+
+  local startup_status=0
+  ZDOTDIR="${ZDOTDIR:-$HOME}" PS4='+TRACE|%D{%s.%6.}|%e|%N|%x:%I| ' \
+    command zsh -ixc ': __DOTSH_ZSHRC_END__' 2>"$dir/startup.trace" || startup_status=$?
+
+  LC_ALL=C command awk -F'|' -v dir="$dir" '
+    /^[+]+TRACE[|]/ {
+      if (!rc) {
+        if ($4 !~ /(^|\/)\.zshrc$/) next
+        rc = $4
+        depth = $3
+      }
+
+      now = $2 + 0
+      if (previous && now >= previous) {
+        ms = (now - previous) * 1000
+        printf "%9.2f ms  %s\n", ms, command >> (dir "/zshrc.ms")
+        if (in_load)
+          printf "%9.2f ms  %s\n", ms, command >> (dir "/antidote.ms")
+      }
+
+      if ($6 == " : __DOTSH_ZSHRC_END__") exit
+
+      if ($4 == rc && $3 == depth)
+        in_load = ($6 ~ /^ *antidote +load( |$)/)
+      if (in_load)
+        print >> (dir "/antidote.trace")
+
+      previous = now
+      command = $0
+    }
+  ' "$dir/startup.trace"
+
+  printf '\n=== .zshrc (oltre %s ms) ===\n' "$threshold_ms"
+  LC_ALL=C command awk -v threshold="$threshold_ms" '$1 + 0 > threshold' "$dir/zshrc.ms" |
+    LC_ALL=C command sort -nr | command head -30
+  printf '\n=== antidote load (oltre %s ms) ===\n' "$threshold_ms"
+  LC_ALL=C command awk -v threshold="$threshold_ms" '$1 + 0 > threshold' "$dir/antidote.ms" |
+    LC_ALL=C command sort -nr | command head -30
+  printf '\nTrace e tempi di ogni riga in %s\n' "$dir"
+  return $startup_status
 }
 
 _cached_eval() {

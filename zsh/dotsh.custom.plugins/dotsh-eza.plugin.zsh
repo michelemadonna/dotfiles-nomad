@@ -4,7 +4,7 @@
 if (( $+commands[eza] )); then
   unalias ls 2>/dev/null
 
-  _zqs_eza_ls() {
+  _dotsh_eza_ls() {
     local arg char chars
     local -a eza_args
     local -i reverse_sort=0 time_sort=0
@@ -37,7 +37,7 @@ if (( $+commands[eza] )); then
       --color-scale=all "${eza_args[@]}"
   }
 
-  alias ls=_zqs_eza_ls
+  alias ls=_dotsh_eza_ls
   alias lls='eza -A --icons --git --group --time-style=long-iso --group-directories-first --color-scale -bghHliS@Z --time-style=long-iso'
   alias ll='eza -A --icons --git --group --time-style=long-iso --group-directories-first --color-scale -las modified'
 elif (( $+commands[exa] )); then

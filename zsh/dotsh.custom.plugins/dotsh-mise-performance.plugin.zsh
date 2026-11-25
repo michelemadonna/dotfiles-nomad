@@ -4,7 +4,7 @@
 # Cache mise's static activation script. The sourced script still installs the
 # normal precmd/chpwd hook, so hook-env keeps running when the environment may
 # have changed.
-local mise_command=$_ZQS_MISE_COMMAND
+local mise_command=$_DOTSH_MISE_COMMAND
 local mise_binary=${commands[$mise_command]}
 local mise_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
 local mise_activate_cache="$mise_cache_dir/${mise_command}-activate-lazy.zsh"
@@ -15,7 +15,7 @@ local -i mise_context_active=0
 local -a mise_path_before_activation=($path)
 local mise_path_before_rehash=$PATH
 
-_zqs_mise_tool_versions_active() {
+_dotsh_mise_tool_versions_active() {
   emulate -L zsh
   local file=$1 line
   local -a fields
@@ -30,7 +30,7 @@ _zqs_mise_tool_versions_active() {
   return 1
 }
 
-_zqs_mise_config_needs_activation() {
+_dotsh_mise_config_needs_activation() {
   emulate -L zsh
   setopt extended_glob
   local file=$1 line value
@@ -59,7 +59,7 @@ _zqs_mise_config_needs_activation() {
   return 1
 }
 
-_zqs_mise_context_needs_activation() {
+_dotsh_mise_context_needs_activation() {
   emulate -L zsh
   local context_dir=$PWD file
   local global_config=${MISE_GLOBAL_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}
@@ -81,7 +81,7 @@ _zqs_mise_context_needs_activation() {
       [[ -f $context_dir/$file ]] && return 0
     done
     if [[ -f $context_dir/.tool-versions ]] &&
-       _zqs_mise_tool_versions_active "$context_dir/.tool-versions"; then
+       _dotsh_mise_tool_versions_active "$context_dir/.tool-versions"; then
       return 0
     fi
     [[ $context_dir == / ]] && break
@@ -91,8 +91,8 @@ _zqs_mise_context_needs_activation() {
   [[ -n ${MISE_CONFIG_FILE:-} || -n ${MISE_ENV:-} ||
      -n ${MISE_DEFAULT_CONFIG_FILENAME:-} ||
      -n ${MISE_OVERRIDE_CONFIG_FILENAMES:-} ]] && return 0
-  _zqs_mise_config_needs_activation "$global_config" && return 0
-  _zqs_mise_tool_versions_active "$HOME/.tool-versions"
+  _dotsh_mise_config_needs_activation "$global_config" && return 0
+  _dotsh_mise_tool_versions_active "$HOME/.tool-versions"
 }
 
 if [[ ! -s $mise_activate_cache || $mise_binary -nt $mise_activate_cache ]]; then
@@ -115,16 +115,16 @@ fi
 if [[ -s $mise_activate_cache ]]; then
   source "$mise_activate_cache"
   mise_initial_hook_deferred=1
-  if _zqs_mise_context_needs_activation; then
+  if _dotsh_mise_context_needs_activation; then
     mise_context_active=1
   else
     mise_initial_hook_deferred=0
   fi
 else
   eval "$(command "$mise_binary" --quiet activate zsh)"
-  _zqs_mise_context_needs_activation && mise_context_active=1
+  _dotsh_mise_context_needs_activation && mise_context_active=1
 fi
-typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=$mise_context_active
+typeset -gi _DOTSH_MISE_CONTEXT_ACTIVE=$mise_context_active
 
 # `mise activate` embeds the PATH from cache-generation time. Keep its shims
 # first, but do not let a cache prepared by the installer discard paths added
@@ -138,9 +138,9 @@ typeset -ga precmd_functions chpwd_functions
 if (( $+functions[_mise_hook_precmd] && $+functions[_mise_hook_chpwd] )); then
   # Current Mise already prevents chpwd from being followed by a duplicate
   # precmd refresh. Use its hooks directly instead of adding a second pair.
-  precmd_functions=(${precmd_functions:#_zqs_mise_precmd_hook})
-  chpwd_functions=(${chpwd_functions:#_zqs_mise_chpwd_hook})
-  unfunction _zqs_mise_precmd_hook _zqs_mise_chpwd_hook 2>/dev/null
+  precmd_functions=(${precmd_functions:#_dotsh_mise_precmd_hook})
+  chpwd_functions=(${chpwd_functions:#_dotsh_mise_chpwd_hook})
+  unfunction _dotsh_mise_precmd_hook _dotsh_mise_chpwd_hook 2>/dev/null
 
   # The cached activation omits Mise's initial hook-env call. Its generated
   # first-prompt fast path assumes that call already happened, so bypass that
@@ -153,82 +153,82 @@ if (( $+functions[_mise_hook_precmd] && $+functions[_mise_hook_chpwd] )); then
   zmodload zsh/datetime
   local mise_refresh_seconds=${DOTSH_MISE_REFRESH_SECONDS:-5}
   [[ $mise_refresh_seconds == <-> ]] || mise_refresh_seconds=5
-  typeset -gi _ZQS_MISE_REFRESH_SECONDS=$mise_refresh_seconds
-  typeset -gi _ZQS_MISE_REFRESH_REQUIRED=$mise_initial_hook_deferred
-  typeset -gF _ZQS_MISE_LAST_REFRESH=$EPOCHREALTIME
-  typeset -g _ZQS_MISE_LAST_PATH=$PATH
+  typeset -gi _DOTSH_MISE_REFRESH_SECONDS=$mise_refresh_seconds
+  typeset -gi _DOTSH_MISE_REFRESH_REQUIRED=$mise_initial_hook_deferred
+  typeset -gF _DOTSH_MISE_LAST_REFRESH=$EPOCHREALTIME
+  typeset -g _DOTSH_MISE_LAST_PATH=$PATH
 
-  _zqs_mise_precmd_hook() {
+  _dotsh_mise_precmd_hook() {
     emulate -L zsh
     local -F now=$EPOCHREALTIME
 
     if [[ ${__MISE_ZSH_CHPWD_RAN:-0} == 1 ]]; then
       # Let Mise consume its chpwd marker without invoking hook-env twice.
       _mise_hook_precmd || return
-      if _zqs_mise_context_needs_activation; then
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=1
+      if _dotsh_mise_context_needs_activation; then
+        typeset -gi _DOTSH_MISE_CONTEXT_ACTIVE=1
       else
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=0
+        typeset -gi _DOTSH_MISE_CONTEXT_ACTIVE=0
       fi
     else
-      if (( ! ${_ZQS_MISE_REFRESH_REQUIRED:-0} )) &&
-         [[ $PATH == ${_ZQS_MISE_LAST_PATH:-} ]]; then
-        if (( ${_ZQS_MISE_REFRESH_SECONDS:-5} > 0 )) &&
-           (( now - ${_ZQS_MISE_LAST_REFRESH:-0} <
-                ${_ZQS_MISE_REFRESH_SECONDS:-5} )); then
+      if (( ! ${_DOTSH_MISE_REFRESH_REQUIRED:-0} )) &&
+         [[ $PATH == ${_DOTSH_MISE_LAST_PATH:-} ]]; then
+        if (( ${_DOTSH_MISE_REFRESH_SECONDS:-5} > 0 )) &&
+           (( now - ${_DOTSH_MISE_LAST_REFRESH:-0} <
+                ${_DOTSH_MISE_REFRESH_SECONDS:-5} )); then
           return 0
         fi
 
         # Outside a Mise context, avoid spawning `mise hook-env` on the
         # periodic refresh. Recheck the lightweight config/path predicate so
         # a newly added config still activates on the next refresh interval.
-        if ! _zqs_mise_context_needs_activation &&
-           (( ! ${_ZQS_MISE_CONTEXT_ACTIVE:-0} )); then
-          typeset -gF _ZQS_MISE_LAST_REFRESH=$now
+        if ! _dotsh_mise_context_needs_activation &&
+           (( ! ${_DOTSH_MISE_CONTEXT_ACTIVE:-0} )); then
+          typeset -gF _DOTSH_MISE_LAST_REFRESH=$now
           return 0
         fi
       fi
 
       _mise_hook_precmd || return
-      if _zqs_mise_context_needs_activation; then
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=1
+      if _dotsh_mise_context_needs_activation; then
+        typeset -gi _DOTSH_MISE_CONTEXT_ACTIVE=1
       else
-        typeset -gi _ZQS_MISE_CONTEXT_ACTIVE=0
+        typeset -gi _DOTSH_MISE_CONTEXT_ACTIVE=0
       fi
     fi
 
-    typeset -g _ZQS_MISE_LAST_PATH=$PATH
-    typeset -gF _ZQS_MISE_LAST_REFRESH=$EPOCHREALTIME
-    typeset -gi _ZQS_MISE_REFRESH_REQUIRED=0
+    typeset -g _DOTSH_MISE_LAST_PATH=$PATH
+    typeset -gF _DOTSH_MISE_LAST_REFRESH=$EPOCHREALTIME
+    typeset -gi _DOTSH_MISE_REFRESH_REQUIRED=0
   }
 
-  precmd_functions=(${precmd_functions/_mise_hook_precmd/_zqs_mise_precmd_hook})
+  precmd_functions=(${precmd_functions/_mise_hook_precmd/_dotsh_mise_precmd_hook})
 else
   # Compatibility fallback for older activation scripts that register the
   # same `_mise_hook` function for chpwd and precmd.
-  _zqs_mise_chpwd_hook() {
+  _dotsh_mise_chpwd_hook() {
     _mise_hook || return
-    typeset -g _ZQS_MISE_CHPWD_PWD=$PWD
-    typeset -gi _ZQS_MISE_SKIP_NEXT_PRECMD=1
+    typeset -g _DOTSH_MISE_CHPWD_PWD=$PWD
+    typeset -gi _DOTSH_MISE_SKIP_NEXT_PRECMD=1
   }
 
-  _zqs_mise_precmd_hook() {
-    if (( ${_ZQS_MISE_SKIP_NEXT_PRECMD:-0} )) &&
-        [[ ${_ZQS_MISE_CHPWD_PWD:-} == $PWD ]]; then
-      unset _ZQS_MISE_SKIP_NEXT_PRECMD _ZQS_MISE_CHPWD_PWD
+  _dotsh_mise_precmd_hook() {
+    if (( ${_DOTSH_MISE_SKIP_NEXT_PRECMD:-0} )) &&
+        [[ ${_DOTSH_MISE_CHPWD_PWD:-} == $PWD ]]; then
+      unset _DOTSH_MISE_SKIP_NEXT_PRECMD _DOTSH_MISE_CHPWD_PWD
       return 0
     fi
 
-    unset _ZQS_MISE_SKIP_NEXT_PRECMD _ZQS_MISE_CHPWD_PWD
+    unset _DOTSH_MISE_SKIP_NEXT_PRECMD _DOTSH_MISE_CHPWD_PWD
     _mise_hook
   }
 
   precmd_functions=(
-    _zqs_mise_precmd_hook
+    _dotsh_mise_precmd_hook
     ${precmd_functions:#_mise_hook}
   )
   chpwd_functions=(
-    _zqs_mise_chpwd_hook
+    _dotsh_mise_chpwd_hook
     ${chpwd_functions:#_mise_hook}
   )
 fi

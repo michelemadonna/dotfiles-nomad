@@ -36,20 +36,6 @@
 #   brew-shell
 #
 
-#TODO to verify
-# Keep Homebrew's completions available in every installation mode, not only
-# the Intel MacPorts/Homebrew coexistence mode below.
-if (( $+commands[brew] )) || [[ -x ${HOMEBREW_BREW:-} ]]; then
-    typeset _dotsh_brew_prefix=${HOMEBREW_PREFIX:-${commands[brew]:A:h:h}}
-    fpath=(
-        $_dotsh_brew_prefix/share/zsh/site-functions(N-/)
-        $_dotsh_brew_prefix/completions/zsh(N-/)
-        $fpath
-    )
-    unset _dotsh_brew_prefix
-fi
-typeset -gU fpath
-
 # Called after dotsh_init, when the runtime's compdef queue is available.
 _dotsh_register_brew_completions() {
     (( $+commands[brew] )) || [[ -x ${HOMEBREW_BREW:-} ]] || return 0
@@ -122,43 +108,6 @@ if [[ -z ${PKGMGR_BREW_SHELL:-} ]]; then
 
     typeset -gU path PATH
 fi
-
-
-# ============================================================================
-# FPATH / COMPLETIONS
-# ============================================================================
-#
-# Important:
-#
-# Homebrew bin is hidden from PATH, but its Zsh completion definitions remain
-# available.
-#
-# Typical location:
-#
-#   /usr/local/share/zsh/site-functions
-#
-
-if [[ -d "$HOMEBREW_PREFIX/share/zsh/site-functions" ]]; then
-
-    fpath=(
-        "$HOMEBREW_PREFIX/share/zsh/site-functions"
-        $fpath
-    )
-
-fi
-
-
-if [[ -d "$MACPORTS_PREFIX/share/zsh/site-functions" ]]; then
-
-    fpath=(
-        "$MACPORTS_PREFIX/share/zsh/site-functions"
-        $fpath
-    )
-
-fi
-
-typeset -gU fpath
-
 
 # ============================================================================
 # REAL HOMEBREW

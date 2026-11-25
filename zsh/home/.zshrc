@@ -1,36 +1,43 @@
-
-
 # Interactive-shell defaults and optional startup profiling.
 [[ ! -o interactive ]] || umask o-w
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zmodload zsh/zprof
 fi
+
 #TODO uncomment
 #[[ -t 0 ]] && printf 'Last login: %s on %s\n' "$(LC_ALL=C date '+%a %b %e %H:%M:%S')" "$(tty | sed 's|^/dev/||')"
-
-
-
+#move the cursor at the bottom of the terminal to avoid scrolling when the prompt is printed
+print -n $'\e[9999;1H'
 # Shared cache root for Mise, completions and other Zsh plugins.
 typeset -g ZSH_CACHE_DIR="${ZSH_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zsh}"
 typeset -g ZSH_COMP_CACHE_DIR="${ZSH_CACHE_DIR}/completions"
+
+if [[ ! -d "$ZSH_CACHE_DIR" ]]; then
+  mkdir -p "$ZSH_CACHE_DIR"
+fi
+if [[ ! -d "$ZSH_COMP_CACHE_DIR" ]]; then
+  mkdir -p "$ZSH_COMP_CACHE_DIR"
+fi
+
+builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
+builtin source "$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-misc.plugin.zsh"
+
+# ZSH Completion Cache
+zstyle ':completion:*' use-cache yes
+zstyle ':completion:*' cache-path "$ZSH_CACHE_DIR/zcompcache"
+
 # FPATH BASE (Before Antidote so compinit can find the completion functions of the package manager)
 typeset -gU fpath FPATH
 
-local -a _fn_candidates=(
-  "$ZSH_COMP_CACHE_DIR"
-)
+local -a _fn_candidates=()
 
 if [[ $OSTYPE == darwin* ]]; then
-  if [[ $CPUTYPE == x86_64 && $DOTFILES_INTEL_PACKAGE_MANAGER != homebrew ]]; then
-    _fn_candidates+=(
-      /opt/local/share/zsh/site-functions
-    )
-  else
-    _fn_candidates+=(
-      /opt/homebrew/share/zsh/site-functions
-      /usr/local/share/zsh/site-functions
-    )
-  fi
+  # Keep Homebrew's and Macports's completions available in every installation mode.
+  _fn_candidates+=(
+    /opt/local/share/zsh/site-functions
+    /opt/homebrew/share/zsh/site-functions
+    /usr/local/share/zsh/site-functions
+  )
 elif [[ $OSTYPE == linux* ]]; then
   _fn_candidates+=(
     /home/linuxbrew/.linuxbrew/share/zsh/site-functions
@@ -41,12 +48,13 @@ elif [[ $OSTYPE == linux* ]]; then
 fi
 
 fpath=(${^_fn_candidates}(N/) $fpath)
+
 unset _fn_candidates
 
 path=("$HOME/.local/bin" $path)
 
 
-builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
+
 
 # Lig PRE Must BE HERE
 # >>> lig pre >>>
@@ -56,6 +64,24 @@ builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
 # Reuse Zephyr's completion dump and audit it only when the cache expires or
 # the completion search path changes.
 zstyle ':zephyr:plugin:completion' use-cache yes
+
+# Completion styles
+# Matching
+#zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'm:{a-zA-Z}={A-Za-z} r:|[-_.]=* r:|=*' DA VERIFICARE
+# Menu
+zstyle ':completion:*' show-ambiguity '1;38;5;214'
+# Groups
+zstyle ':completion:*' group-order directories files
+zstyle ':completion:*' list-grouped false
+# Colors
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+# Files and directories
+zstyle ':completion:*' list-dirs-first true
+# Editors and file viewers
+zstyle ":completion:*:*:(bat|micro|nano|vim|${EDITOR:t}):*" file-sort modification
+# Options
+zstyle ':completion:*:options' list-colors '=--*=38;5;81' '=-*=38;5;114'
+
 
 #TODO Add every key in in .ssh using the parameter indentities
 zstyle :omz:plugins:ssh-agent honor-existing yes
@@ -84,7 +110,9 @@ zstyle ':antidote:bundle:*' defer-options '-m'
 zstyle ':antidote:static' file "$ZSH_CACHE_DIR/antidote-bundle-no-precmd.zsh"
 antidote load
 
-# 5. OH MY POSH
+#fpath=("$ZSH_COMP_CACHE_DIR" $fpath)
+
+# OH MY POSH
 if (( $+commands[oh-my-posh1] )); then
   if [[ -f "$DOTSH_OH_MY_POSH_CONFIG" ]]; then
     if (( $+functions[dotsh-init-oh-my-posh] )); then
@@ -124,8 +152,7 @@ unsetopt CORRECT CORRECT_ALL
 REPORTTIME=${REPORTTIME:-2}
 TIMEFMT="%U user %S system %P cpu %*Es total"
 
-#move the cursor at the bottom of the terminal to avoid scrolling when the prompt is printed
-print -n $'\e[9999;1H'
+
 
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zprof

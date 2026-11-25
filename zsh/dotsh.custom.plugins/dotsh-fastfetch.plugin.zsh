@@ -1,30 +1,56 @@
-run-fastfetch() {
+_dotsh_show_fastfetch() {
+    [[ -o interactive &&
+       ${DOTSH_SHOW_FASTFETCH:-false} != false &&
+       -z ${DOTSH_FASTFETCH_SHOWN:-} ]] || return 0
 
-	if [[ -o interactive && ${DOTSH_SHOW_FASTFETCH:-false} != false && -z ${DOTSH_FASTFETCH_SHOWN:-} ]]; then
-		export DOTSH_FASTFETCH_SHOWN=1
-		show_fastfetch=true
+    export DOTSH_FASTFETCH_SHOWN=1
 
-		if [[ $DOTSH_SHOW_FASTFETCH == first ]]; then
-			active_terminals=$(ps -axo tty= 2>/dev/null | awk '
-				$1 ~ /^ttys[0-9]+$/ || $1 ~ /^pts\/[0-9]+$/ { seen[$1] = 1 }
-				END { for (tty in seen) count++; print count + 0 }
-			')
-			(( active_terminals <= 1 )) || show_fastfetch=false
-		fi
+    if (( ! $+commands[fastfetch] )); then
+        print -u2 "fastfetch not found. See $DOTFILES_DIR/Readme.md"
+        return 0
+    fi
 
-		if [[ $show_fastfetch == true ]] && (( $+commands[fastfetch] )); then
-			parent_cmd=$(ps -o comm= -p $PPID 2>/dev/null)
-			case "${parent_cmd:l}" in
-				*zed*|*code*|*micro*|*nvim*|*vim*|*idea*|*clion*|*goland*|*phpstorm*|*pycharm*|*tmux*|*fresh*|*helix*|*terminal*) ;;
-				*) fastfetch --pipe false ;;
-			esac
-			
-			unset parent_cmd
-		elif [[ $show_fastfetch == true ]]; then
-			print -u2 "fastfetch not found. See $DOTFILES_DIR/Readme.md"
-		fi
-		unset active_terminals show_fastfetch
-	fi
+    emulate -L zsh
+    local parent_cmd tty_list tty first_tty
+    local -a terminals
+
+    if [[ $DOTSH_SHOW_FASTFETCH == first ]]; then
+        [[ -t 0 && -n $TTY ]] || return 0
+        # Count allocated PTYs directly. On macOS the static ttys0–ttys9
+        # nodes also exist without a session, so only count dynamic names.
+        case $OSTYPE:$TTY in
+            darwin*:/dev/ttys[0-9][0-9]<->)
+                terminals=(/dev/ttys[0-9][0-9]<->(N%c))
+                ;;
+            linux*:/dev/pts/<->)
+                terminals=(/dev/pts/<->(N%c))
+                ;;
+            *)
+                # Keep the process-based check for other terminal types.
+                tty_list=$(ps -axo tty= 2>/dev/null) || return 0
+                for tty in ${(u)=tty_list}; do
+                    case $tty in
+                        ttys<->|pts/<->|s<->)
+                            [[ -z $first_tty ]] || return 0
+                            first_tty=$tty
+                            ;;
+                    esac
+                done
+                ;;
+        esac
+        (( ${#terminals} <= 1 )) || return 0
+    fi
+
+    parent_cmd=$(ps -o comm= -p "$PPID" 2>/dev/null)
+    case ${parent_cmd:l} in
+        *zed*|*code*|*micro*|*nvim*|*vim*|*idea*|\
+        *clion*|*goland*|*phpstorm*|*pycharm*|\
+        *tmux*|*fresh*|*helix*|*terminal*)
+            return 0
+            ;;
+    esac
+
+    fastfetch --pipe false
 }
 
-run-fastfetch
+_dotsh_show_fastfetch

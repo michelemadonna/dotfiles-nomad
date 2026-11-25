@@ -13,7 +13,7 @@ if (( ! $+commands[mise] )); then
     return
   fi
 fi
-typeset -g _ZQS_MISE_COMMAND=$__mise
+typeset -g _DOTSH_MISE_COMMAND=$__mise
 
 # This lightweight compatibility tree lets Powerlevel10k's asdf segment show
 # ASDF-compatible Mise runtimes without scanning the complete plugin registry.
@@ -40,6 +40,13 @@ fi
 _dotsh_mise_init_completion() {
   emulate -L zsh
   # Register the runtime probes when completion is initialized.
+  typeset -gA _DOTSH_MISE_RUNTIME_BINS=(
+    python 'python3 python' node node deno deno bun bun go go rust rustc
+    ruby ruby perl perl php php lua lua julia julia dart dart kotlin kotlinc
+    scala scala ghc ghc elixir elixir zig zig crystal crystal haxe haxe
+    swift swift dotnet dotnet clang clang java javac npm:typescript tsc
+  )
+
   # Called by the Mise completion, with the output of a successful version probe.
   _dotsh_mise_parse_external_versions() {
     emulate -L zsh
@@ -103,6 +110,8 @@ _dotsh_mise_init_completion() {
   _dotsh_mise_external_versions() {
     emulate -L zsh
     local tool=$1
+    local -i check_only=0
+    [[ ${2:-} == --check ]] && check_only=1
     case $tool in
       core:(python|node|deno|bun|go|rust|ruby|elixir|zig|swift|dotnet|java)) tool=${tool#core:} ;;
       nodejs) tool=node ;;
@@ -110,21 +119,16 @@ _dotsh_mise_init_completion() {
       dotnet-core) tool=dotnet ;;
     esac
 
-    local -a bins probe=(--version)
+    local -a bins=(${=_DOTSH_MISE_RUNTIME_BINS[$tool]}) probe=(--version)
+    (( $#bins )) || return $check_only
     case $tool in
-      python) bins=(python3 python); probe=(-E -S --version) ;;
-      go) bins=(go); probe=(version) ;;
-      rust) bins=(rustc) ;;
-      perl) bins=(perl); probe=(-e 'print "$^V\n"') ;;
-      lua) bins=(lua); probe=(-v) ;;
-      kotlin) bins=(kotlinc); probe=(-version) ;;
-      scala) bins=(scala); probe=(-version) ;;
-      ghc) bins=(ghc); probe=(--numeric-version) ;;
-      dotnet) bins=(dotnet); probe=(--list-sdks) ;;
-      java) bins=(javac); probe=(-version) ;;
-      npm:typescript) bins=(tsc) ;;
-      node|deno|bun|ruby|php|julia|dart|elixir|zig|crystal|haxe|swift|clang) bins=($tool) ;;
-      *) return 0 ;;
+      python) probe=(-E -S --version) ;;
+      go) probe=(version) ;;
+      perl) probe=(-e 'print "$^V\n"') ;;
+      lua) probe=(-v) ;;
+      kotlin|scala|java) probe=(-version) ;;
+      ghc) probe=(--numeric-version) ;;
+      dotnet) probe=(--list-sdks) ;;
     esac
 
     local -a homebrew_prefixes
@@ -142,18 +146,18 @@ _dotsh_mise_init_completion() {
         local os_release=/etc/os-release key value
         local -a distribution_ids
         [[ -r $os_release ]] || os_release=/usr/lib/os-release
-        [[ -r $os_release ]] || return 0
+        [[ -r $os_release ]] || return $check_only
         while IFS='=' read -r key value; do
           case $key in
             ID|ID_LIKE) distribution_ids+=(${=${(Q)value}}) ;;
           esac
         done < "$os_release"
-        (( ${distribution_ids[(I)debian]} || ${distribution_ids[(I)ubuntu]} )) || return 0
+        (( ${distribution_ids[(I)debian]} || ${distribution_ids[(I)ubuntu]} )) || return $check_only
 
         homebrew_prefixes=(/home/linuxbrew/.linuxbrew)
         bin_dirs+=(/usr/local/bin ${^homebrew_prefixes}/bin)
         ;;
-      *) return 0 ;;
+      *) return $check_only ;;
     esac
 
     local formula=$tool prefix developer_dir
@@ -243,6 +247,7 @@ _dotsh_mise_init_completion() {
         for root in "${managed_dirs[@]}"; do
           [[ $real_file == "$root"/* ]] && continue 2
         done
+        (( check_only )) && return 0
         (( ! ${+probed[$real_file]} )) || continue
         probed[$real_file]=1
 
@@ -258,9 +263,10 @@ _dotsh_mise_init_completion() {
         done
       done
     done
+    return $check_only
   }
 
-  local mise_command=${_ZQS_MISE_COMMAND:-mise}
+  local mise_command=${_DOTSH_MISE_COMMAND:-mise}
   local mise_completion_file="$ZSH_CACHE_DIR/completions/_$mise_command"
   _dotsh_mise_prepare_completion_cache "$mise_command" "$mise_completion_file"
 
@@ -273,12 +279,12 @@ _dotsh_mise_init_completion() {
   fi
   _comps[$mise_command]=_$mise_command
 
-  functions[_mise]=$functions[_zqs_mise_completion]
+  functions[_mise]=$functions[_dotsh_mise_completion]
 }
 
 # Wrap mise to update .tool-versions on `mise use`; preserve its native completion
 # for all subcommands outside the custom `mise use` version selector.
-_zqs_mise_native_completion() {
+_dotsh_mise_native_completion() {
   if (( ! $+functions[_mise_orig] )); then
     # Fallback for a missing/unwritable cache: invoke the autoload trampoline in
     # the real completion context, capture it, then restore this wrapper.
@@ -287,14 +293,14 @@ _zqs_mise_native_completion() {
     _mise "$@"
     local completion_status=$?
     functions[_mise_orig]=$functions[_mise]
-    functions[_mise]=$functions[_zqs_mise_completion]
+    functions[_mise]=$functions[_dotsh_mise_completion]
     return $completion_status
   fi
 
   _mise_orig "$@"
 }
 
-_zqs_mise_completion() {
+_dotsh_mise_completion() {
   if [[ $words[2] == use ]]; then
     local idx=3
     [[ $words[3] == -g ]] && idx=4
@@ -331,17 +337,23 @@ _zqs_mise_completion() {
       return 0
     fi
 
-    local tool_prefix=${words[$idx]}
-    local -a installed_tools installed_specs
-    installed_tools=("${(@f)$(MISE_OFFLINE=1 command mise ls --installed --quiet |
-      awk -v prefix="$tool_prefix" 'NF >= 2 && $2 != "system" && index($1, prefix) == 1 {print $1}' |
-      sort -u)}")
-    (( ${#installed_tools} )) || return 0
-    installed_specs=(${^installed_tools}'@')
-    compadd -Q -S '' -- "${installed_specs[@]}"
+    local tool_prefix=${words[$idx]} tool
+    local -aU available_tools
+    available_tools=(${(f)"$(MISE_OFFLINE=1 command mise ls --installed --quiet |
+      awk -v prefix="$tool_prefix" 'NF >= 2 && $2 != "system" && index($1, prefix) == 1 {print $1}')"})
+    for tool in "${(@k)_DOTSH_MISE_RUNTIME_BINS}"; do
+      [[ $tool == "$tool_prefix"* ]] || continue
+      (( ${available_tools[(Ie)$tool]} )) && continue
+      if _dotsh_mise_external_versions "$tool" --check; then
+        available_tools+=("$tool")
+      fi
+    done
+    (( $#available_tools )) || return 0
+    local -a specs=(${^available_tools}'@')
+    compadd -Q -S '' -- "${specs[@]}"
     return 0
   fi
-  _zqs_mise_native_completion "$@"
+  _dotsh_mise_native_completion "$@"
 }
 
 _dotsh_mise_defer_completion
@@ -382,7 +394,7 @@ _mise_runtime_to_asdf() {
   print -r -- "$runtime $version" >> "$file"
 }
 
-_zqs_refresh_mise_asdf_compat() {
+_dotsh_refresh_mise_asdf_compat() {
   command sh "$DOTFILES_DIR/zsh/helpers/prepare-mise-cache.sh" --asdf-only
 }
 
@@ -403,8 +415,8 @@ mise () {
     if [[ -n "$runtime_spec" ]]; then
       _mise_runtime_to_asdf "$runtime_spec" "$global_flag"
     fi
-    _zqs_refresh_mise_asdf_compat || return
-    typeset -gi _ZQS_MISE_REFRESH_REQUIRED=1
+    _dotsh_refresh_mise_asdf_compat || return
+    typeset -gi _DOTSH_MISE_REFRESH_REQUIRED=1
   elif [[ "$1" == install || "$1" == i || "$1" == uninstall ||
           "$1" == prune || "$1" == upgrade || "$1" == up ]]; then
     export MISE_QUIET=0
@@ -412,14 +424,14 @@ mise () {
     local mise_status=$?
     export MISE_QUIET=1
     if (( mise_status == 0 )); then
-      _zqs_refresh_mise_asdf_compat || return
-      typeset -gi _ZQS_MISE_REFRESH_REQUIRED=1
+      _dotsh_refresh_mise_asdf_compat || return
+      typeset -gi _DOTSH_MISE_REFRESH_REQUIRED=1
     fi
     return $mise_status
   else
     mise_orig "$@"
     local mise_status=$?
-    (( mise_status == 0 )) && typeset -gi _ZQS_MISE_REFRESH_REQUIRED=1
+    (( mise_status == 0 )) && typeset -gi _DOTSH_MISE_REFRESH_REQUIRED=1
     return $mise_status
   fi
 }

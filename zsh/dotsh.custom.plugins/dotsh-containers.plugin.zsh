@@ -3,14 +3,14 @@
 #TODO copy the config on dotfiles-next also
 if whence -p docker >/dev/null 2>&1; then
 
-  typeset -gi _zqs_docker_initialized=0
+  typeset -gi _dotsh_docker_initialized=0
 
-  _zqs_docker_wrapper() {
+  _dotsh_docker_wrapper() {
     local curcontext=$curcontext
     local docker_context=docker
 
     # Lazy initialization
-    if (( ! _zqs_docker_initialized )); then
+    if (( ! _dotsh_docker_initialized )); then
       _cache_cli_completion _docker docker completion zsh ||
         return 1
 
@@ -20,9 +20,9 @@ if whence -p docker >/dev/null 2>&1; then
       (( $+functions[_docker] )) || return 1
 
       # Restore the wrapper association
-      compdef _zqs_docker_wrapper docker
+      compdef _dotsh_docker_wrapper docker
 
-      _zqs_docker_initialized=1
+      _dotsh_docker_initialized=1
     fi
 
     # Customize the completion context
@@ -37,7 +37,7 @@ if whence -p docker >/dev/null 2>&1; then
     _docker "$@"
   }
 
-  compdef _zqs_docker_wrapper docker
+  compdef _dotsh_docker_wrapper docker
 
 
   # Docker aliases from Oh My Zsh's docker plugin.
@@ -82,9 +82,12 @@ if whence -p docker >/dev/null 2>&1; then
   alias dxc='docker container exec'
   alias dxcit='docker container exec -it'
 
-  zstyle ':completion:*:*:docker:*' option-stacking yes
-  zstyle ':completion:*:*:docker-*:*' option-stacking yes
-
+  #zstyle ':completion:*:*:docker:*' option-stacking yes
+  #zstyle ':completion:*:*:docker-*:*' option-stacking yes
+  zstyle ':completion:*:*:docker:*:*' option-stacking yes
+  zstyle ':completion:*:*:docker-*:*:*' option-stacking yes
+  zstyle ':completion:*:*:docker-run:*:*' list-grouped false
+  zstyle ':completion:*:*:docker-container-rm:*:*' verbose yes
 fi
 
 if whence -p kubectl >/dev/null 2>&1; then
@@ -213,7 +216,7 @@ if whence -p kubectl >/dev/null 2>&1; then
   alias kdj='kubectl describe job'
   alias kdelj='kubectl delete job'
 
-  _zqs_build_kubectl_out_alias() {
+  _dotsh_build_kubectl_out_alias() {
     setopt localoptions norcexpandparam
     eval "function $1 { $2 }"
     eval "function _$1 {
@@ -223,8 +226,8 @@ if whence -p kubectl >/dev/null 2>&1; then
     compdef _$1 $1
   }
 
-  _zqs_build_kubectl_out_alias kj  'kubectl "$@" -o json | jq'
-  _zqs_build_kubectl_out_alias kjx 'kubectl "$@" -o json | fx'
-  _zqs_build_kubectl_out_alias ky  'kubectl "$@" -o yaml | yh'
-  unfunction _zqs_build_kubectl_out_alias
+  _dotsh_build_kubectl_out_alias kj  'kubectl "$@" -o json | jq'
+  _dotsh_build_kubectl_out_alias kjx 'kubectl "$@" -o json | fx'
+  _dotsh_build_kubectl_out_alias ky  'kubectl "$@" -o yaml | yh'
+  unfunction _dotsh_build_kubectl_out_alias
 fi
