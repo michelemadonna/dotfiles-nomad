@@ -155,6 +155,50 @@ _cached_eval() {
   source "$cache"
 }
 
+
+
+_cache_cli_completion() {
+  emulate -L zsh
+  setopt no_aliases
+
+  (( $# >= 2 )) || return 1
+
+  local cache_file="${ZSH_COMP_CACHE_DIR}/$1"
+  shift
+
+  local binary
+  binary=$(whence -p -- "$1") || return 1
+  [[ -n $binary ]] || return 1
+
+  # Return immediately if the cache is valid
+  [[ -s $cache_file && ! $binary -nt $cache_file ]] && return 0
+
+  [[ -d $ZSH_COMP_CACHE_DIR ]] ||
+    mkdir -p -- "$ZSH_COMP_CACHE_DIR" || return 1
+
+  local tmp_file="${cache_file}.$$.tmp"
+
+  if [[ ! -s $cache_file ]]; then
+    # Synchronous generation
+    if "$@" >| "$tmp_file" 2>/dev/null && [[ -s $tmp_file ]]; then
+      mv -f -- "$tmp_file" "$cache_file"
+    else
+      rm -f -- "$tmp_file"
+      return 1
+    fi
+  else
+    # Asynchronous refresh
+    (
+      if "$@" >| "$tmp_file" 2>/dev/null && [[ -s $tmp_file ]]; then
+        mv -f -- "$tmp_file" "$cache_file"
+      else
+        rm -f -- "$tmp_file"
+      fi
+    ) &!
+  fi
+}
+
+
 completion-source() {
   local func=${_comps[$1]}
 

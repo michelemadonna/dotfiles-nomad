@@ -12,12 +12,12 @@ fi
 
 # Shared cache root for Mise, completions and other Zsh plugins.
 typeset -g ZSH_CACHE_DIR="${ZSH_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zsh}"
-
+typeset -g ZSH_COMP_CACHE_DIR="${ZSH_CACHE_DIR}/completions"
 # FPATH BASE (Before Antidote so compinit can find the completion functions of the package manager)
 typeset -gU fpath FPATH
 
 local -a _fn_candidates=(
-  "$ZSH_CACHE_DIR/completions"
+  "$ZSH_COMP_CACHE_DIR"
 )
 
 if [[ $OSTYPE == darwin* ]]; then
@@ -50,7 +50,7 @@ builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
 
 # Lig PRE Must BE HERE
 # >>> lig pre >>>
-_cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh pre
+#_cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh pre
 # <<< lig pre <<<
 
 # Reuse Zephyr's completion dump and audit it only when the cache expires or
@@ -85,7 +85,7 @@ zstyle ':antidote:static' file "$ZSH_CACHE_DIR/antidote-bundle-no-precmd.zsh"
 antidote load
 
 # 5. OH MY POSH
-if (( $+commands[oh-my-posh] )); then
+if (( $+commands[oh-my-posh1] )); then
   if [[ -f "$DOTSH_OH_MY_POSH_CONFIG" ]]; then
     if (( $+functions[dotsh-init-oh-my-posh] )); then
       dotsh-init-oh-my-posh
