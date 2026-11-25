@@ -36,6 +36,7 @@
 #   brew-shell
 #
 
+#TODO to verify
 # Keep Homebrew's completions available in every installation mode, not only
 # the Intel MacPorts/Homebrew coexistence mode below.
 if (( $+commands[brew] )) || [[ -x ${HOMEBREW_BREW:-} ]]; then

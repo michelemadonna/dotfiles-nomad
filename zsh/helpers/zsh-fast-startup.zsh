@@ -154,3 +154,19 @@ _cached_eval() {
   # Zsh usa automaticamente il .zwc se è aggiornato
   source "$cache"
 }
+
+completion-source() {
+  local func=${_comps[$1]}
+
+  if [[ -z $func ]]; then
+    echo "No completion registered for $1"
+    return 1
+  fi
+
+  autoload +X "$func" 2>/dev/null
+  print -r -- "${functions_source[$func]}"
+  print
+  for dir in $fpath; do
+    [[ -f "$dir/$func" ]] && print -r -- "$dir/$func"
+  done
+}

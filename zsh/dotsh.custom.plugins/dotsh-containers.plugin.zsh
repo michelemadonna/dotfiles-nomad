@@ -1,9 +1,7 @@
 #!/usr/bin/env zsh
 # Docker and kubectl aliases with completion generation only when the CLI changes.
 
-typeset -g ZQS_CLI_COMPLETION_DIR="${GENCOMPL_FPATH:-$ZSH_CACHE_DIR/completions}"
-fpath=("$ZQS_CLI_COMPLETION_DIR" $fpath)
-typeset -gU fpath
+typeset -g ZQS_CLI_COMPLETION_DIR="${ZSH_CACHE_DIR}/completions"
 
 _zqs_write_cli_completion() {
   emulate -L zsh

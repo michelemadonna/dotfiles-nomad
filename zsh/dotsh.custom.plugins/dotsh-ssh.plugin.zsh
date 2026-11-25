@@ -100,7 +100,7 @@
 #unset _ZQS_SSH_KEYS _ZQS_SSH_KEYS_STATUS _ZQS_SSH_KEYS_VALID
 #
 
-# 2. SSH-AGENT UNIVERSALE (macOS Keychain, Linux Desktop Keyring/KWallet, Server SSH)
+# SSH-AGENT (macOS Keychain, Linux Desktop Keyring/KWallet, Server SSH)
 # Oh My Zsh's ssh-agent plugin is loaded standalone through Antidote, so define
 # the host key that Oh My Zsh normally prepares in its full framework startup.
 : "${SHORT_HOST:=${HOST%%.*}}"
@@ -114,7 +114,7 @@ if [[ -z "$SSH_CONNECTION" && -n "$DISPLAY$WAYLAND_DISPLAY" ]]; then
   done; unset _ask
 fi
 
-# 2.1 Stampa le chiavi SSH in memoria
+# Print the current SSH keys in memory, and load any local private keys into the agent
 ssh-ids() {
   print '\nCurrent SSH Keys:'
   if [[ ! -S ${SSH_AUTH_SOCK-} ]] || ! ssh-add -l 2>/dev/null; then
@@ -122,7 +122,7 @@ ssh-ids() {
   fi
 }
 
-# 2.2 Forza il caricamento immediato delle chiavi nel Portachiavi
+# Force the SSH agent to load all local private keys, including those in macOS Keychain.
 ssh-load() {
   if [[ "$OSTYPE" == darwin* ]]; then
     ssh-add --apple-load-keychain 2>/dev/null || ssh-add --apple-use-keychain 2>/dev/null || ssh-add -A 2>/dev/null
@@ -132,7 +132,7 @@ ssh-load() {
   ssh-ids
 }
 
-# 2.3 Stampa automatica all'avvio (disattivabile con: zstyle ':dotsh:ssh-local' show-ids no)
+# On startup print the current SSH keys (disable with: zstyle ':dotsh:ssh-local' show-ids no)
 if zstyle -T ':dotsh:ssh-local' show-ids; then
   ssh-ids
 fi

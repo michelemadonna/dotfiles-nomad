@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
-
+# This plugin provides a fast-loading Oh My Posh integration for Zsh.
+#TODO Copy on dotfiles-next also the config
 if (( ! $+commands[oh-my-posh] )); then
   return
 fi

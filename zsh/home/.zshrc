@@ -8,32 +8,31 @@ fi
 #TODO uncomment
 #[[ -t 0 ]] && printf 'Last login: %s on %s\n' "$(LC_ALL=C date '+%a %b %e %H:%M:%S')" "$(tty | sed 's|^/dev/||')"
 
-## >>> lig pre >>>
-#if [[ -x "$HOME/.local/bin/lig" ]]; then
-#  path=("$HOME/.local/bin" $path)
-#fi
-#if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
-#      ${LIG_TTY-} != "$TTY" && -t 0 && -t 1 &&
-#      "$TERM" != dumb && -z ${INSIDE_EMACS-} ]] && (( $+commands[lig] )); then
-#  source "$DOTFILES_DIR/zsh/helpers/lig-init.zsh"
-#  _dotsh_lig_source_init pre
-#fi
-##<<< lig pre <<<
+
 
 # Shared cache root for Mise, completions and other Zsh plugins.
 typeset -g ZSH_CACHE_DIR="${ZSH_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zsh}"
-# 1. FPATH BASE (Prima di Antidote affinché compinit trovi le completion del package manager)
+
+# FPATH BASE (Before Antidote so compinit can find the completion functions of the package manager)
 typeset -gU fpath FPATH
 
-local -a _fn_candidates=()
+local -a _fn_candidates=(
+  "$ZSH_CACHE_DIR/completions"
+)
+
 if [[ $OSTYPE == darwin* ]]; then
   if [[ $CPUTYPE == x86_64 && $DOTFILES_INTEL_PACKAGE_MANAGER != homebrew ]]; then
-    _fn_candidates=(/opt/local/share/zsh/site-functions)
+    _fn_candidates+=(
+      /opt/local/share/zsh/site-functions
+    )
   else
-    _fn_candidates=(/opt/homebrew/share/zsh/site-functions /usr/local/share/zsh/site-functions)
+    _fn_candidates+=(
+      /opt/homebrew/share/zsh/site-functions
+      /usr/local/share/zsh/site-functions
+    )
   fi
 elif [[ $OSTYPE == linux* ]]; then
-  _fn_candidates=(
+  _fn_candidates+=(
     /home/linuxbrew/.linuxbrew/share/zsh/site-functions
     /usr/local/share/zsh/site-functions
     /usr/share/zsh/site-functions
@@ -41,15 +40,15 @@ elif [[ $OSTYPE == linux* ]]; then
   )
 fi
 
-for _fn_dir in $_fn_candidates; do
-  [[ -d "$_fn_dir" ]] && fpath=("$_fn_dir" $fpath)
-done
-unset _fn_candidates _fn_dir
+fpath=(${^_fn_candidates}(N/) $fpath)
+unset _fn_candidates
 
 path=("$HOME/.local/bin" $path)
 
 
 builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
+
+# Lig PRE Must BE HERE
 # >>> lig pre >>>
 _cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh pre
 # <<< lig pre <<<
@@ -142,9 +141,9 @@ fi
 #fi
 ## <<< lig post <<<
 
-
+#LIG POST Must BE HERE
 # >>> lig post >>>
-zsh-defer -m -p _cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh post
+#zsh-defer -m -p _cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh post
 # <<< lig post <<<
 # Autosuggestions otherwise waits for the next real precmd to bind widgets.
 # Its dependencies and Lig's widget hooks have run when this task executes.

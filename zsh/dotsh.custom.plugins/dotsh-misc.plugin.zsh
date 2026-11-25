@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# Final interactive-shell customizations. Load after the other custom plugins.
+# Some miscellaneous aliases and functions for Zsh.
 alias _dig=dogggo _ping=gping _hex=hexyl _curl=http _ps=procs _top=btop
 alias _ls='command ls' nodejs='command node'
 
@@ -67,3 +67,4 @@ function app-reset-permissions() {
 
   tccutil reset All "$bundle_id"
 }
+
