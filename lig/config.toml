@@ -1,0 +1,174 @@
+[ui]
+width = "auto"
+min_width = 30
+max_width = 100
+height = 8
+min_height = 0
+descriptions = true
+description_position = "right"
+description_lines = 3
+icons = "nerd"
+border = "rounded"
+density = "compact"
+theme = "terminal"
+
+[keys]
+accept = ["enter"]
+next = [
+	"tab",
+    "down",
+    "ctrl-n",
+]
+prev = [
+    "shift-tab",
+    "up",
+    "ctrl-p",
+]
+dismiss = ["esc"]
+toggle = ["ctrl-space"]
+history = ["ctrl-r"]
+
+#[preview]
+#enabled = true
+#start_hidden = true
+#layout = "inline"
+#position = "auto"
+#adaptive_size = true
+#preserve_completion = true
+#width = "auto"
+#height = "auto"
+#margin = 1
+#
+#[preview.keys]
+#toggle = "alt-p"
+#toggle_layout = "alt-f"
+#resize_floating = "alt-z"
+#up = "alt-up"
+#down = "alt-down"
+#page_up = "page-up"
+#page_down = "page-down"
+
+
+[behavior]
+fuzzy = true
+#toggle_only = false
+enter_accepts = "auto"
+enter_runs_commands = []
+insert_space = false
+files_first = true
+files_first_commands = [
+    "code",
+    "code-insiders",
+    "codium",
+    "cursor",
+    "zed",
+    "subl",
+    "atom",
+    "gedit",
+    "gnome-text-editor",
+    "kate",
+    "kwrite",
+    "mousepad",
+    "xed",
+    "pluma",
+    "vim",
+    "vi",
+    "nvim",
+    "gvim",
+    "view",
+    "vimdiff",
+    "nano",
+    "pico",
+    "micro",
+    "emacs",
+    "emacsclient",
+    "hx",
+    "helix",
+    "kak",
+    "joe",
+    "ne",
+    "mcedit",
+    "cat",
+    "bat",
+    "batcat",
+    "less",
+    "more",
+    "most",
+    "head",
+    "tail",
+    "glow",
+    "xxd",
+    "hexdump",
+    "open",
+    "xdg-open",
+    "gio",
+    "nautilus",
+    "dolphin",
+    "thunar",
+    "nemo",
+    "pcmanfm",
+    "eog",
+    "feh",
+    "viu",
+    "sxiv",
+    "nsxiv",
+    "imv",
+    "gimp",
+    "inkscape",
+    "evince",
+    "okular",
+    "zathura",
+    "xreader",
+    "libreoffice",
+    "soffice",
+    "mpv",
+    "vlc",
+    "totem",
+    "celluloid",
+]
+options_after_dash = [
+    "ls",
+    "eza",
+    "exa",
+    "lsd",
+    "cp",
+    "mv",
+    "rm",
+    "ln",
+    "mkdir",
+    "rmdir",
+    "touch",
+]
+show_on_empty_token = true
+complete_commands = false
+online = true
+history = true
+generator_timeout_ms = 5000
+generator_cache_ms = 5000
+disabled_commands = []
+completers = ["shell"]
+help_parsing = true
+help_timeout_ms = 2000
+help_skip = []
+
+# [colors] changes any of the theme's: "#rrggbb", a 256-color number, or "default".
+# [colors]
+# bg = "#1e1e2e"
+# fg = "#cdd6f4"
+# selected_bg = "#45475a"
+# selected_fg = "#ffffff"
+# description_fg = "244"
+# selected_description_fg = "250"
+# match_fg = "214"
+# border_fg = "240"
+# border_bg = "default"
+# scrollbar_fg = "238"
+# scrollbar_thumb = "244"
+# info_fg = "244"
+
+# [icons] by name (`lig icons` lists them), by extension ("*.rs") or file name: a glyph,
+# a color, or both.
+# [icons]
+# folder = "📁"
+# git-branch = { color = "208" }
+# "*.rs" = { glyph = "🦀", color = "#dea584" }

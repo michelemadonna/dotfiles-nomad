@@ -1,6 +1,8 @@
 #!/usr/bin/env zsh
 # Generate getopt-style completions explicitly with Shift-TAB.
 
+[[ ${DOTSH_ENABLE_AUTO_GENCOMP:-true} == true ]] || return 0
+
 [[ -n ${GENCOMPL_FPATH:-} ]] || typeset -g GENCOMPL_FPATH="$ZSH_CACHE_DIR/gencomp-on-demand"
 fpath+=("$GENCOMPL_FPATH")
 typeset -gU fpath
@@ -128,4 +130,5 @@ _dotsh_gencomp_for_current_command() {
 }
 
 zle -N _dotsh_gencomp_for_current_command
-dotsh_bindkey _dotsh_gencomp_for_current_command Shift+Tab
+bindkey -M emacs '^[[Z' _dotsh_gencomp_for_current_command
+bindkey -M viins '^[[Z' _dotsh_gencomp_for_current_command

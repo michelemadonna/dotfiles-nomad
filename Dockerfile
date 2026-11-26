@@ -69,13 +69,25 @@ ENV HOME=/home/demo \
 USER demo
 WORKDIR /home/demo
 
-# Install optional demo tools before copying the repository. These layers are
-# independent from local configuration changes and can be reused by BuildKit.
+# Install every tool exposed by the installer before copying the repository.
+# The runtime wizard only changes configuration; it never changes the image's
+# tool inventory.
 RUN mkdir -p /home/demo/.local/bin \
     && ln -s /usr/bin/batcat /home/demo/.local/bin/bat \
     && ln -s /usr/bin/fdfind /home/demo/.local/bin/fd \
     && curl -fsSL https://mise.run | sh \
-    && curl -fsSL https://ohmyposh.dev/install.sh | bash -s -- -d /home/demo/.local/bin
+    && curl -fsSL https://ohmyposh.dev/install.sh | bash -s -- -d /home/demo/.local/bin \
+    && architecture="$(dpkg --print-architecture)" \
+    && case "$architecture" in amd64) fzf_platform=linux_amd64 ;; arm64) fzf_platform=linux_arm64 ;; *) exit 1 ;; esac \
+    && fzf_url="$(curl -fsSL https://api.github.com/repos/junegunn/fzf/releases/latest \
+      | awk -F '"' -v suffix="-${fzf_platform}.tar.gz" '/"browser_download_url"/ && index($4, suffix) { print $4; exit }')" \
+    && test -n "$fzf_url" \
+    && curl -fsSL "$fzf_url" -o /tmp/fzf.tar.gz \
+    && tar -xzf /tmp/fzf.tar.gz -C /home/demo/.local/bin fzf \
+    && chmod 755 /home/demo/.local/bin/fzf \
+    && rm -f /tmp/fzf.tar.gz \
+    && curl -fsSL https://github.com/KevenGoncalves/lig/releases/latest/download/install.sh \
+      | LIG_INSTALL_DIR=/home/demo/.local/bin sh
 
 RUN mkdir -p /home/demo/Developer/personal@github \
       /home/demo/Developer/work@github \
@@ -95,7 +107,7 @@ FROM base AS dotfiles-remote
 
 ENV DOTFILES_SOURCE_MODE=remote
 
-ARG DOTFILES_REPO_URL=https://github.com/michelemadonna/dotfiles-next.git
+ARG DOTFILES_REPO_URL=https://github.com/michelemadonna/dotfiles-nomad.git
 ARG DOTFILES_REF=main
 
 RUN git clone --depth 1 --branch "$DOTFILES_REF" \
@@ -116,41 +128,14 @@ RUN git -C /home/demo/.dotfiles init -q
 FROM dotfiles-${DOTFILES_SOURCE} AS final
 
 # System packages are already installed in the cacheable base stage. Seed the
-# installer's versioned marker. Local builds configure the checkout now;
-# remote builds defer the required interactive installer to docker run -it.
-RUN mkdir -p /home/demo/.local/state/dotfiles-next \
-    && touch /home/demo/.local/state/dotfiles-next/base-packages-v4-linux-apt.done \
-    && if [ "$DOTFILES_SOURCE_MODE" = local ]; then \
-      cd /home/demo/.dotfiles \
-      && EDITOR=micro \
-        DOTSH_PROMPT=powerlevel10k \
-        DOTSH_SHOW_FASTFETCH=false \
-        sh ./install.sh non-interactive; \
-    fi
+# installer's versioned marker, but leave every preference for the runtime menu.
+RUN test -f /home/demo/.dotfiles/install.sh \
+    && mkdir -p /home/demo/.local/state/dotfiles-nomad \
+    && touch /home/demo/.local/state/dotfiles-nomad/base-packages-v4-linux-apt.done
 
-RUN mkdir -p \
-      /home/demo/.config \
-      /home/demo/.fonts \
-      /home/demo/.local/bin \
-      /home/demo/.ssh \
-    && chmod 700 /home/demo/.ssh \
+RUN mkdir -p /home/demo/.fonts \
     && cp /home/demo/.dotfiles/fonts/* /home/demo/.fonts/ \
-    && fc-cache -f \
-    && ln -sfn /home/demo/.dotfiles/ssh/config /home/demo/.ssh/config \
-    && ln -sfnT /home/demo/.dotfiles/git /home/demo/.config/git \
-    && ln -sfnT /home/demo/.dotfiles/tmux /home/demo/.config/tmux \
-    && ln -sfnT /home/demo/.dotfiles/ripgrep /home/demo/.config/ripgrep \
-    && cp /home/demo/.dotfiles/git/examples/local.gitconfig.example /home/demo/.config/git/local.gitconfig \
-    && cp /home/demo/.dotfiles/git/examples/gitconfig.personal@github.example /home/demo/.config/git/gitconfig.personal@github \
-    && cp /home/demo/.dotfiles/git/examples/gitconfig.work@github.example /home/demo/.config/git/gitconfig.work@github \
-    && ln -sfnT /home/demo/.dotfiles/micro /home/demo/.config/micro \
-    && ln -sfnT /home/demo/.dotfiles/fresh /home/demo/.config/fresh \
-    && ln -sfnT /home/demo/.dotfiles/mise /home/demo/.config/mise \
-    && ln -sfnT /home/demo/.dotfiles/fastfetch /home/demo/.config/fastfetch \
-    && ln -sfnT /home/demo/.dotfiles/oh-my-posh /home/demo/.config/oh-my-posh \
-    && if [ "$DOTFILES_SOURCE_MODE" = local ]; then \
-      sh /home/demo/.dotfiles/zsh/helpers/prepare-mise-cache.sh; \
-    fi
+    && fc-cache -f
 
 RUN cd /home/demo \
     && cd /home/demo/Developer/personal@github/simple-node-hello \
@@ -160,4 +145,9 @@ RUN cd /home/demo \
     && cd /home/demo/Developer/personal@github/python-helloworld \
     && mise use python@3.13.6
 
-CMD ["sh", "-c", "if [ \"$DOTFILES_SOURCE_MODE\" = remote ]; then cd /home/demo/.dotfiles && sh ./install.sh; fi; printf '\\n\\033[1;33m+----------------------------------------------------------+\\n| KNOWN DOCKER PREVIEW BUG                                 |\\n| Press Ctrl-P twice to cycle the preview layout.          |\\n+----------------------------------------------------------+\\033[0m\\n\\n'; exec zsh -l"]
+COPY docker/demo-start.sh /usr/local/bin/dotfiles-demo
+
+# Zsh needs a UTF-8 locale to measure the prompt's glyphs in terminal columns.
+ENV LANG=C.UTF-8
+
+CMD ["sh", "/usr/local/bin/dotfiles-demo"]

@@ -17,7 +17,11 @@ if [ -n "${ZSH_VERSION-}" ]; then
   export DOTSH_USE_MISE=${DOTSH_USE_MISE:=true} #true/false
   export DOTSH_OH_MY_POSH_CONFIG="$DOTFILES_DIR/oh-my-posh/custom.omp.json"
   export DOTSH_SHOW_FASTFETCH=${DOTSH_SHOW_FASTFETCH:=true} #true/false/first
-  export DOTSH_USE_OH_MY_POSH=${DOTSH_USE_OH_MY_POSH:=true} #true/false
+  export DOTSH_PROMPT=${DOTSH_PROMPT:=ohmyposh} #ohmyposh/minimal
+  export DOTSH_USE_FZF=${DOTSH_USE_FZF:=true} #true/false
+  export DOTSH_SSH_LOAD_KEY=${DOTSH_SSH_LOAD_KEY:=false} #true/false
+  export DOTSH_SSH_SHOW_KEY=${DOTSH_SSH_SHOW_KEY:=false} #true/false
+  export DOTSH_SSH_ASKPASS_REQUIRE=${DOTSH_SSH_ASKPASS_REQUIRE:=false} #true/false
 
 
   # macOS may start Zsh without loading the user's login profile.

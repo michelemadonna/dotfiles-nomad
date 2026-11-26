@@ -110,7 +110,11 @@ if [[ -z "$SSH_CONNECTION" && -n "$DISPLAY$WAYLAND_DISPLAY" ]]; then
     [[ -S "$_s" ]] && export SSH_AUTH_SOCK="$_s" && break
   done; unset _s
   for _ask in ksshaskpass seahorse-ssh-askpass gnome-ssh-askpass; do
-    (( $+commands[$_ask] )) && export SSH_ASKPASS="${commands[$_ask]}" SSH_ASKPASS_REQUIRE=prefer && break
+    if (( $+commands[$_ask] )); then
+      export SSH_ASKPASS="${commands[$_ask]}"
+      [[ ${SSH_ASKPASS_REQUIRE:-} == force ]] || export SSH_ASKPASS_REQUIRE=prefer
+      break
+    fi
   done; unset _ask
 fi
 

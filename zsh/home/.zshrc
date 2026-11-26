@@ -26,13 +26,31 @@ zstyle ':zephyr:plugin:color' use-cache yes
 
 builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
 
+# Configure SSH behavior before the asynchronous startup query and before the
+# Oh My Zsh ssh-agent plugin is sourced from the Antidote bundle.
+zstyle :omz:plugins:ssh-agent honor-existing yes
+if [[ ${DOTSH_SSH_LOAD_KEY:-false} == true ]]; then
+  zstyle :omz:plugins:ssh-agent lazy no
+else
+  zstyle :omz:plugins:ssh-agent lazy yes
+fi
+zstyle :omz:plugins:ssh-agent quiet yes
+if [[ ${DOTSH_SSH_SHOW_KEY:-false} == true ]]; then
+  zstyle ':dotsh:ssh-local' show-ids yes
+else
+  zstyle ':dotsh:ssh-local' show-ids no
+fi
+[[ ${DOTSH_SSH_ASKPASS_REQUIRE:-false} != true ]] || export SSH_ASKPASS_REQUIRE=force
+
 # Start the inherited SSH agent query early. The SSH plugin prints its result
 # during bundle loading, before the prompt appears.
 _dotsh_startup_ssh_open
 
 # Lig PRE Must BE HERE
 # >>> lig pre >>>
-_cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh pre
+if (( $+commands[lig] )); then
+  _cached_eval "$commands[lig]" init zsh pre
+fi
 # <<< lig pre <<<
 
 # Use Zsh prompt escapes for the current time and terminal without starting external commands.
@@ -94,11 +112,6 @@ zstyle ":completion:*:*:(bat|micro|nano|vim|${EDITOR:t}):*" file-sort modificati
 # Options
 zstyle ':completion:*:options' list-colors '=--*=38;5;81' '=-*=38;5;114'
 
-# Reuse an inherited SSH agent and skip adding identities during startup.
-zstyle :omz:plugins:ssh-agent honor-existing yes
-zstyle :omz:plugins:ssh-agent lazy yes
-zstyle :omz:plugins:ssh-agent quiet yes
-
 # Prefer an installed copy of Antidote and fall back to a checkout in ZDOTDIR.
 # Antidote generates a static bundle from the manifest and reuses it on startup.
 for _antidote_dir in \
@@ -134,8 +147,9 @@ if [[ ! -o zle || ! -t 0 || -v ZSH_EXECUTION_STRING ]]; then
   _dotsh_init_colors
 fi
 
-# Load Oh My Posh only when explicitly enabled and the executable is available.
-if [[ ${DOTSH_USE_OH_MY_POSH:-false} == true ]] &&
+# Older generated .zshenv files may still use the boolean prompt setting.
+if [[ ${DOTSH_PROMPT:-} == ohmyposh ||
+      ( -z ${DOTSH_PROMPT:-} && ${DOTSH_USE_OH_MY_POSH:-false} == true ) ]] &&
    (( $+commands[oh-my-posh] )); then
   local omp_plugin="$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-oh-my-posh.plugin.zsh"
   if [[ -f $DOTSH_OH_MY_POSH_CONFIG ]]; then
@@ -240,7 +254,9 @@ fi
 
 #LIG POST Must BE HERE
 # >>> lig post >>>
-zsh-defer -m -p _cached_eval "/Users/michele/Developer/michelemadonna@github/lig/target/release/lig" init zsh post
+if (( $+commands[lig] && $+functions[zsh-defer] )); then
+  zsh-defer -m -p _cached_eval "$commands[lig]" init zsh post
+fi
 # <<< lig post <<<
 # Autosuggestions otherwise waits for the next real precmd to bind widgets.
 # Its dependencies and Lig's widget hooks have run when this task executes.

@@ -20,3 +20,6 @@ build
 *.zwc.old
 *.log
 zsh/vendor/packages/
+zsh/home/.antidote/
+zsh/home/.zshenv
+zsh/home/.zshenv.*
