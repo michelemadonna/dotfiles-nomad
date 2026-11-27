@@ -1,7 +1,62 @@
 # Helpers for .zshrc. Sourcing this file defines the functions. The caller
 # chooses when to initialize the cache, start the SSH query, and load colors.
 
+# Cache the Zsh code printed by the command and arguments passed to this helper.
+# Reuse the file while it is younger than CACHED_EVAL_TTL (86,400 seconds by
+# default). On a miss, replace it only after the command succeeds, then compile
+# and source it in the current shell. Use this for trusted commands such as
+# dircolors that are expected to print shell code.
+_cached_eval() {
+  zmodload -F zsh/stat b:zstat 2>/dev/null
+  emulate -L zsh
+  setopt local_options no_aliases
 
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/eval"
+  local ttl=${CACHED_EVAL_TTL:-86400}
+  local key="${(j: :)${(q)@}}"
+  local cache="$dir/${key//[^a-zA-Z0-9]/_}.zsh"
+  local compiled="${cache}.zwc"
+  local now=${(%):-%D{%s}}
+  local tmp
+  local -a mtime
+
+  (( $# )) || return 1
+
+  # Refresh a missing or expired cache.
+  if [[ ! -f $cache ]] ||
+     ! zstat -A mtime +mtime -- "$cache" ||
+     (( now - mtime[1] >= ttl )); then
+
+    mkdir -p -- "$dir" || return 1
+    tmp="${cache}.$$"
+
+    # Generate into a temporary file and publish it only on success.
+    if "$@" >| "$tmp"; then
+      mv -f -- "$tmp" "$cache" || return 1
+
+      # Compile the refreshed cache for subsequent reads.
+      zcompile "$compiled" "$cache" 2>/dev/null
+    else
+      rm -f -- "$tmp"
+      return 1
+    fi
+  fi
+
+  # Also compile a valid cache if its wordcode is missing or older.
+  if [[ ! -f $compiled || $cache -nt $compiled ]]; then
+    zcompile "$compiled" "$cache" 2>/dev/null
+  fi
+
+  # Zsh automatically uses the adjacent .zwc when it is current.
+  source "$cache"
+}
+
+# Lig PRE Must BE HERE
+# >>> lig pre >>>
+if (( $+commands[lig] )); then
+  _cached_eval "$commands[lig]" init zsh pre
+fi
+# <<< lig pre <<<
 
 # Schedule compilation of the readable Zsh source passed as $1 when its adjacent
 # .zwc is missing, empty, or older than the source. The disowned job keeps the
@@ -85,11 +140,12 @@ _dotsh_init_startup_cache() {
 
 # Start ssh-add -l before package manager setup and plugin loading so the query
 # can overlap with startup. Only run for an interactive shell with an inherited
-# agent socket and with the SSH identity summary enabled. Save the socket and a
-# read descriptor for the SSH plugin, which consumes the output and trailing
-# exit status only if it still uses the same socket.
+# agent socket, lazy key loading, and the SSH identity summary enabled. Save
+# the socket and read descriptor for the startup reporter. With eager loading
+# it queries the agent after the keys have been added instead.
 _dotsh_startup_ssh_open() {
   if [[ -o interactive && -S ${SSH_AUTH_SOCK-} ]] &&
+     zstyle -t :omz:plugins:ssh-agent lazy &&
      zstyle -T ':dotsh:ssh-local' show-ids; then
     typeset -g _dotsh_startup_ssh_socket=$SSH_AUTH_SOCK
     exec {_dotsh_startup_ssh_fd}< <(
@@ -99,9 +155,7 @@ _dotsh_startup_ssh_open() {
   fi
 }
 
-# Release the read descriptor after Antidote has loaded the SSH plugin. Discard
-# the recorded socket and descriptor even if the plugin did not read the result.
-# A shell that skipped the initial query has no descriptor to close.
+# Release the read descriptor once the startup report has run or been skipped.
 _dotsh_startup_ssh_close() {
   if [[ -n ${_dotsh_startup_ssh_fd-} ]]; then
     exec {_dotsh_startup_ssh_fd}<&-
@@ -278,58 +332,6 @@ zsh-startup-trace() {
   return $startup_status
 }
 
-# Cache the Zsh code printed by the command and arguments passed to this helper.
-# Reuse the file while it is younger than CACHED_EVAL_TTL (86,400 seconds by
-# default). On a miss, replace it only after the command succeeds, then compile
-# and source it in the current shell. Use this for trusted commands such as
-# dircolors that are expected to print shell code.
-_cached_eval() {
-  zmodload -F zsh/stat b:zstat 2>/dev/null
-  emulate -L zsh
-  setopt local_options no_aliases
-
-  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/eval"
-  local ttl=${CACHED_EVAL_TTL:-86400}
-  local key="${(j: :)${(q)@}}"
-  local cache="$dir/${key//[^a-zA-Z0-9]/_}.zsh"
-  local compiled="${cache}.zwc"
-  local now=${(%):-%D{%s}}
-  local tmp
-  local -a mtime
-
-  (( $# )) || return 1
-
-  # Refresh a missing or expired cache.
-  if [[ ! -f $cache ]] ||
-     ! zstat -A mtime +mtime -- "$cache" ||
-     (( now - mtime[1] >= ttl )); then
-
-    mkdir -p -- "$dir" || return 1
-    tmp="${cache}.$$"
-
-    # Generate into a temporary file and publish it only on success.
-    if "$@" >| "$tmp"; then
-      mv -f -- "$tmp" "$cache" || return 1
-
-      # Compile the refreshed cache for subsequent reads.
-      zcompile "$compiled" "$cache" 2>/dev/null
-    else
-      rm -f -- "$tmp"
-      return 1
-    fi
-  fi
-
-  # Also compile a valid cache if its wordcode is missing or older.
-  if [[ ! -f $compiled || $cache -nt $compiled ]]; then
-    zcompile "$compiled" "$cache" 2>/dev/null
-  fi
-
-  # Zsh automatically uses the adjacent .zwc when it is current.
-  source "$cache"
-}
-
-
-
 # Set up terminal colors and the ls alias once. Preserve an existing LS_COLORS
 # or fill it from dircolors or gdircolors, caching the command output for each
 # TERM for up to 20 hours. Load Zephyr's color defaults, then add -A to ls.
@@ -414,10 +416,3 @@ completion-source() {
     [[ -f "$dir/$func" ]] && print -r -- "$dir/$func"
   done
 }
-
-# Lig PRE Must BE HERE
-# >>> lig pre >>>
-if (( $+commands[lig] )); then
-  _cached_eval "$commands[lig]" init zsh pre
-fi
-# <<< lig pre <<<
