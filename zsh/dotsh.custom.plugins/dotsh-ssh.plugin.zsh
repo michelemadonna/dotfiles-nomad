@@ -128,11 +128,11 @@ ssh-ids() {
     reply=${reply%$'\n'}
     case ${reply##*$'\n'} in
       0) print -r -- "${${reply%$'\n'*}%$'\n'}"; return 0 ;;
-      <->) print -P "%F{yellow}Nessuna chiave SSH in memoria (caricamento lazy).%f"; return 0 ;;
+      <->) print -P "%F{yellow}No SSH Keys in memory (lazy loading).%f"; return 0 ;;
     esac
   fi
   if [[ ! -S ${SSH_AUTH_SOCK-} ]] || ! ssh-add -l 2>/dev/null; then
-    print -P "%F{yellow}Nessuna chiave SSH in memoria (caricamento lazy).%f"
+    print -P "%F{yellow}No SSH Keys in memory (lazy loading).%f"
   fi
 }
 

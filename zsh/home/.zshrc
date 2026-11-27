@@ -53,9 +53,6 @@ if (( $+commands[lig] )); then
 fi
 # <<< lig pre <<<
 
-# Use Zsh prompt escapes for the current time and terminal without starting external commands.
-[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
-
 # Move the cursor to the bottom of the terminal before printing the prompt.
 print -n $'\e[9999;1H'
 
@@ -137,6 +134,12 @@ typeset -g ZSH_AUTOSUGGEST_MANUAL_REBIND=1
 antidote load
 
 _dotsh_startup_ssh_close
+
+# Use Zsh prompt escapes for the current time and terminal without starting external commands.
+[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
+print -r
+
+
 _dotsh_use_warm_compdump
 _dotsh_compile_bundle_plugins
 

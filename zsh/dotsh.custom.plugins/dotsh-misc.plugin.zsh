@@ -68,3 +68,33 @@ function app-reset-permissions() {
   tccutil reset All "$bundle_id"
 }
 
+gpg-unlock() {
+    local gnupg_home db
+
+    gnupg_home=$(gpgconf --list-dirs homedir) || return 1
+
+    echo "Stopping GnuPG services..."
+    gpgconf --kill all || return 1
+
+    for db in pubring.db pubring.kbx; do
+        if [[ -f "$gnupg_home/public-keys.d/$db.lock" ||
+              -f "$gnupg_home/$db.lock" ]]; then
+
+            echo "Unlocking $db..."
+            gpgconf --unlock "$db" || return 1
+        fi
+    done
+
+    echo "Restarting GnuPG agent..."
+    gpgconf --launch gpg-agent || return 1
+
+    if [[ -t 0 ]]; then
+        export GPG_TTY=$(tty)
+        gpg-connect-agent updatestartuptty /bye >/dev/null
+    fi
+
+    echo "Checking GnuPG database..."
+    gpg --list-secret-keys --keyid-format LONG || return 1
+
+    echo "GnuPG successfully recovered."
+}
