@@ -8,12 +8,6 @@
 
 # Remove write permission for other users on files created by interactive
 # shells. Load zprof early when its marker file exists to measure startup.
-if [[ -o interactive && -t 1 ]]; then
-    zmodload zsh/terminfo
-    echoti cup $(( LINES - 1 )) 0
-fi
-
-
 [[ ! -o interactive ]] || umask o-w
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zmodload zsh/zprof
@@ -226,6 +220,18 @@ _dotsh_init_first_zle_line() {
   if (( $+functions[_dotsh_mise_init_completion] && $+functions[compdef] )); then
     _dotsh_mise_init_completion
   fi
+  # Install Lig's widgets after the editor and history hooks, before input.
+  if [[ ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
+        -n ${LIG_TTY-} && "$LIG_TTY" == "$TTY" ]] && (( $+commands[lig] )); then
+    # Keep Lig's ignore entry local until autosuggestions initializes its defaults.
+    if (( ! $+ZSH_AUTOSUGGEST_IGNORE_WIDGETS )); then
+      local -a ZSH_AUTOSUGGEST_IGNORE_WIDGETS
+    fi
+    if _cached_eval "$commands[lig]" init zsh post && (( $+functions[_lig_line_init] )); then
+      _lig_line_init
+    fi
+  fi
+  return 0
 }
 autoload -Uz add-zle-hook-widget
 add-zle-hook-widget line-init _dotsh_init_first_zle_line
@@ -248,6 +254,10 @@ REPORTTIME=${REPORTTIME:-2}
 TIMEFMT="%U user %S system %P cpu %*Es total"
 
 
+if [[ -o interactive && -t 1 ]]; then
+    
+    echoti cup $(( LINES - 1 )) 0
+fi
 
 # On startup print the current SSH keys (disable with: zstyle ':dotsh:ssh-local' show-ids no)
 if zstyle -T ':dotsh:ssh-local' show-ids; then
@@ -255,12 +265,8 @@ if zstyle -T ':dotsh:ssh-local' show-ids; then
   print
 fi
 
-
 _dotsh_startup_ssh_close
 
-# >>> lig post >>>
-#eval "$("/Users/michele/.local/bin/lig" init zsh post)"
-# <<< lig post <<<
 # Autosuggestions otherwise waits for the next real precmd to bind widgets.
 # Its dependencies and Lig's widget hooks have run when this task executes.
 if (( $+functions[zsh-defer] )); then
@@ -270,14 +276,18 @@ fi
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zprof
 fi
-#LIG POST Must BE HERE
-# >>> ligss post >>>
+
+# Lig uses its cwd report to mark the start of the prompt for floating previews.
+# Send it before the first prompt. Lig's own precmd handles subsequent prompts.
 if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
-      -n ${LIG_TTY-} && "$LIG_TTY" == "$TTY" ]] && (( $+commands[lig] && $+functions[zsh-defer] )); then
-  # Antidote queues autosuggestions and highlighting before Lig's ZLE hooks.
-  zsh-defer -m -p _cached_eval "$commands[lig]" init zsh post
+      -n ${LIG_TTY-} && "$LIG_TTY" == "$TTY" ]] && (( $+commands[lig] )); then
+  autoload -Uz add-zsh-hook
+  _dotsh_lig_first_prompt() {
+    add-zsh-hook -d precmd _dotsh_lig_first_prompt
+    builtin print -rn -- $'\e]6973;C;'"${PWD//[$'\a\e']/}"$'\a' >> "${LIG_OUT:-$TTY}"
+  }
+  add-zsh-hook precmd _dotsh_lig_first_prompt
 fi
-# <<< ligss post <<<
 
 
 

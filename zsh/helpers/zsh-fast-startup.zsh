@@ -22,8 +22,8 @@ _cached_eval() {
 
   (( $# )) || return 1
 
-  # Refresh a missing or expired cache.
-  if [[ ! -f $cache ]] ||
+  # Refresh a missing or expired cache, including after replacing a binary.
+  if [[ ! -f $cache || ( $1 == /* && $1 -nt $cache ) ]] ||
      ! zstat -A mtime +mtime -- "$cache" ||
      (( now - mtime[1] >= ttl )); then
 
@@ -53,7 +53,7 @@ _cached_eval() {
 
 # Lig PRE Must BE HERE
 # >>> lig pre >>>
-if (( $+commands[lig] )); then
+if [[ -o interactive && -z ${LIG_DISABLE-} ]] && (( $+commands[lig] )) then
   _cached_eval "$commands[lig]" init zsh pre
 fi
 # <<< lig pre <<<
