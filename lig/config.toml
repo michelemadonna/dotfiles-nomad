@@ -28,25 +28,68 @@ dismiss = ["esc"]
 toggle = ["ctrl-space"]
 history = ["ctrl-r"]
 
-#[preview]
-#enabled = true
-#start_hidden = true
-#layout = "inline"
-#position = "auto"
-#adaptive_size = true
-#preserve_completion = true
-#width = "auto"
-#height = "auto"
-#margin = 1
-#
-#[preview.keys]
-#toggle = "alt-p"
-#toggle_layout = "alt-f"
-#resize_floating = "alt-z"
-#up = "alt-up"
-#down = "alt-down"
-#page_up = "page-up"
-#page_down = "page-down"
+[preview]
+enabled = true
+start_hidden = false
+auto_open_delay_ms = 1000
+animation = "fade"
+layout = "inline"
+position = "auto"
+width = "auto"
+height = "auto"
+min_width = 28
+min_height = 5
+margin = 1
+adaptive_size = true
+max_lines = 200
+scroll_step = 3
+max_bytes = 262144
+timeout_ms = 2000
+cache_entries = 16
+line_numbers = true
+syntax_highlighting = true
+preserve_prompt = true
+mouse = true
+show_title = true
+image_protocol = "auto"
+
+[preview.keys]
+toggle = "alt-p"
+toggle_layout = "alt-f"
+resize_floating = "alt-z"
+open = ""
+close = ""
+up = "alt-up"
+down = "alt-down"
+page_up = "page-up"
+page_down = "page-down"
+
+[preview.text]
+backend = "native"
+fallback = "native"
+output = "ansi"
+
+[preview.image]
+backend = "native"
+fallback = "native"
+output = "ansi"
+
+[preview.archive]
+backend = "native"
+fallback = "native"
+output = "ansi"
+
+[preview.media]
+backend = "native"
+fallback = "native"
+output = "ansi"
+
+[preview.directory]
+backend = "native"
+fallback = "native"
+output = "ansi"
+
+[preview.rules]
 
 
 [behavior]

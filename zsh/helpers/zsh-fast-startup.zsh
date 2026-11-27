@@ -41,7 +41,7 @@ _dotsh_init_startup_cache() {
   local _env_source="${ZDOTDIR:-$HOME}/.zshenv"
   local _package_manager_mode=homebrew
   if [[ $OSTYPE == darwin* && $CPUTYPE == x86_64 && \
-        ${DOTFILES_INTEL_PACKAGE_MANAGER:-homebrew} != homebrew ]]; then
+        ${DOTSH_INTEL_PACKAGE_MANAGER:-${DOTFILES_INTEL_PACKAGE_MANAGER:-homebrew}} != homebrew ]]; then
     _package_manager_mode=macports
   fi
   local _expected_cache_header="# dotsh-init-tools-v3:${_package_manager_mode}"
@@ -414,3 +414,10 @@ completion-source() {
     [[ -f "$dir/$func" ]] && print -r -- "$dir/$func"
   done
 }
+
+# Lig PRE Must BE HERE
+# >>> lig pre >>>
+if (( $+commands[lig] )); then
+  _cached_eval "$commands[lig]" init zsh pre
+fi
+# <<< lig pre <<<

@@ -37,7 +37,7 @@ executed as a shell script.
 ```text
 PROMPT=ohmyposh
 EDITOR=micro
-SHOW_FASTFETCH=first
+SHOW_FASTFETCH=first-pty
 USE_MISE=true
 USE_FZF=true
 LOAD_SSH_KEY=false
@@ -52,13 +52,49 @@ Allowed values:
 | --- | --- |
 | `PROMPT` | `ohmyposh`, `minimal` |
 | `EDITOR` | `micro`, `fresh`, `vim`, `nano` |
-| `SHOW_FASTFETCH` | `true`, `false`, `first` |
+| `SHOW_FASTFETCH` | `always`, `first-pty`, `never` |
 | `USE_MISE`, `USE_FZF` | `true`, `false` |
 | `LOAD_SSH_KEY`, `SHOW_SSH_KEY`, `ASKPASS_REQUIRE` | `true`, `false` |
 | `INTEL_PACKAGE_MANAGER` | `macports`, `homebrew` |
 
 Blank lines and lines beginning with `#` are ignored. Unknown keys, shell
 syntax, unsupported values, and malformed lines stop the installation.
+
+### Shell preferences
+
+The three SSH settings are independent and default to `false`.
+
+| Config key | Zsh variable | Effect when enabled |
+| --- | --- | --- |
+| `LOAD_SSH_KEY` | `DOTSH_SSH_LOAD_KEY` | Tries to add supported local identities to the SSH agent at Zsh startup. With this setting off, use `ssh-load` to add keys on demand. |
+| `SHOW_SSH_KEY` | `DOTSH_SSH_SHOW_KEY` | Shows the fingerprints reported by the active agent at startup, including keys that were already loaded. |
+| `ASKPASS_REQUIRE` | `DOTSH_SSH_ASKPASS_REQUIRE` | Sets `SSH_ASKPASS_REQUIRE=force` for SSH commands in the shell, including commands run after startup. The configured askpass helper must be available. |
+
+`SHOW_FASTFETCH` is saved as `DOTSH_SHOW_FASTFETCH`. Use `always` to show the
+overview in eligible interactive shells, `first-pty` to also require the first
+active terminal, or `never` to skip the overview and its optional installation.
+Both display modes retain the filters for detected editor and tmux shells and
+skip shells that inherit a marker from a previous display. The first-PTY check
+counts active terminals across the system, including SSH and other terminal
+applications, and accounts for Lig's extra PTY. The wizard defaults to `never`
+and a fresh non-interactive install defaults to `first-pty`. Existing
+`true`, `first`, and `false` values map to the corresponding new modes.
+
+### Package manager on macOS Intel
+
+The wizard lets you choose MacPorts or Homebrew on Intel. The installer checks
+`INTEL_PACKAGE_MANAGER` in `--conf`, then `DOTSH_INTEL_PACKAGE_MANAGER` in the
+environment, then the saved preference, and defaults to MacPorts. The previous
+name `DOTFILES_INTEL_PACKAGE_MANAGER` remains a fallback within each of the
+environment and saved preference checks.
+
+Homebrew on Intel is Tier 3 as of September 2026. With no CI coverage or new
+Intel binary packages, some formulae may build from source or fail. Homebrew
+plans to stop running on Intel in or after September 2027. MacPorts is the
+recommended choice for setups that need to remain in use in 2028.
+[Homebrew Support Tiers](https://docs.brew.sh/Support-Tiers)
+
+### Installer usage
 
 All options are:
 

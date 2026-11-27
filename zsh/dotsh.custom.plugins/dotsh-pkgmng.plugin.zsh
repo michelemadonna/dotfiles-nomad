@@ -53,7 +53,7 @@ _dotsh_register_brew_completions() {
 
 # Load only on Intel macOS when MacPorts is selected and both package managers
 # are installed.
-if [[ ${DOTFILES_INTEL_PACKAGE_MANAGER:-macports} == macports ]] &&
+if [[ ${DOTSH_INTEL_PACKAGE_MANAGER:-${DOTFILES_INTEL_PACKAGE_MANAGER:-macports}} == macports ]] &&
     [[ $OSTYPE == darwin* && $(uname -m) == x86_64 ]] &&
     [[ -x ${HOMEBREW_BREW:-/usr/local/bin/brew} ]] &&
     [[ -x ${MACPORTS_PREFIX:-/opt/local}/bin/port ]]; then

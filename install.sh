@@ -21,6 +21,7 @@ BASE_PACKAGES_MARKER_VERSION=4
 PLATFORM=
 PACKAGE_MANAGER=
 MACOS_ARCH=
+INTEL_HOMEBREW_NOTICE='Homebrew on Intel is Tier 3 as of September 2026. With no CI coverage or new Intel bottles (prebuilt packages), some formulae may build from source or fail. Homebrew plans to stop running on Intel in or after September 2027. Choose MacPorts for a setup you plan to use in 2028.'
 MACPORTS_PREFIX=/opt/local
 MACPORTS_PORT=/opt/local/bin/port
 MACPORTS_RELEASE_API=https://api.github.com/repos/macports/macports-base/releases/latest
@@ -132,6 +133,15 @@ validate_boolean() {
   esac
 }
 
+normalize_fastfetch_mode() {
+  case $1 in
+    always | true) printf '%s\n' always ;;
+    first-pty | first) printf '%s\n' first-pty ;;
+    never | false) printf '%s\n' never ;;
+    *) return 1 ;;
+  esac
+}
+
 load_config_file() {
   config_line_number=0
   while IFS= read -r config_line || [ -n "$config_line" ]; do
@@ -159,10 +169,8 @@ load_config_file() {
         esac
         ;;
       SHOW_FASTFETCH)
-        case $config_value in
-          true | false | first) CONFIG_SHOW_FASTFETCH=$config_value ;;
-          *) die "SHOW_FASTFETCH must be true, false, or first (line $config_line_number)." ;;
-        esac
+        CONFIG_SHOW_FASTFETCH=$(normalize_fastfetch_mode "$config_value") ||
+          die "SHOW_FASTFETCH must be always, first-pty, or never (line $config_line_number)."
         ;;
       USE_MISE)
         validate_boolean USE_MISE "$config_value"
@@ -195,8 +203,8 @@ load_config_file() {
   done <"$CONFIG_FILE"
 
   if [ -n "$CONFIG_INTEL_PACKAGE_MANAGER" ]; then
-    DOTFILES_INTEL_PACKAGE_MANAGER=$CONFIG_INTEL_PACKAGE_MANAGER
-    export DOTFILES_INTEL_PACKAGE_MANAGER
+    DOTSH_INTEL_PACKAGE_MANAGER=$CONFIG_INTEL_PACKAGE_MANAGER
+    export DOTSH_INTEL_PACKAGE_MANAGER
   fi
 }
 
@@ -637,6 +645,31 @@ check_interactive_terminal() {
   UI_FDS_OPEN=true
 }
 
+resolve_intel_package_manager() {
+  intel_package_manager=${DOTSH_INTEL_PACKAGE_MANAGER:-${DOTFILES_INTEL_PACKAGE_MANAGER:-}}
+  choices_file="$DOTFILES_DIR/zsh/home/.zshenv"
+  if [ -z "$intel_package_manager" ] && [ -f "$choices_file" ]; then
+    normalized_choices=$(cat "$choices_file") || die 'Cannot read saved Zsh preferences.'
+    intel_package_manager=$(value_from_choices DOTSH_INTEL_PACKAGE_MANAGER)
+    if [ -z "$intel_package_manager" ]; then
+      intel_package_manager=$(value_from_choices DOTFILES_INTEL_PACKAGE_MANAGER)
+    fi
+  fi
+  intel_package_manager=${intel_package_manager:-macports}
+  case $intel_package_manager in
+    macports | homebrew) PACKAGE_MANAGER=$intel_package_manager ;;
+    *) die "DOTSH_INTEL_PACKAGE_MANAGER must be macports or homebrew (got $intel_package_manager)." ;;
+  esac
+  DOTSH_INTEL_PACKAGE_MANAGER=$PACKAGE_MANAGER
+  export DOTSH_INTEL_PACKAGE_MANAGER
+}
+
+check_package_manager_prerequisites() {
+  if [ "$PACKAGE_MANAGER" = homebrew ]; then
+    homebrew_installed || have bash || die 'bash is required to install Homebrew.'
+  fi
+}
+
 detect_platform() {
   case $(uname -s) in
     Darwin)
@@ -644,39 +677,10 @@ detect_platform() {
       MACOS_ARCH=$(uname -m)
       case $MACOS_ARCH in
         x86_64)
-          intel_package_manager=${DOTFILES_INTEL_PACKAGE_MANAGER:-}
-          if [ -z "$intel_package_manager" ]; then
-            choices_file="$DOTFILES_DIR/zsh/home/.zshenv"
-            if [ -f "$choices_file" ]; then
-              intel_package_manager=$(
-                awk '
-                  /^  export DOTFILES_INTEL_PACKAGE_MANAGER=/ {
-                    sub(/^  export DOTFILES_INTEL_PACKAGE_MANAGER=/, "")
-                    sub(/[[:space:]]+#.*/, "")
-                    gsub(/^"|"$/, "")
-                    print
-                    exit
-                  }
-                ' "$choices_file"
-              )
-            fi
-          fi
-          [ -n "$intel_package_manager" ] || intel_package_manager=macports
-          case $intel_package_manager in
-            macports | homebrew) PACKAGE_MANAGER=$intel_package_manager ;;
-            *)
-              die "Unsupported DOTFILES_INTEL_PACKAGE_MANAGER value: $intel_package_manager. Use macports or homebrew."
-              ;;
-          esac
-          DOTFILES_INTEL_PACKAGE_MANAGER=$PACKAGE_MANAGER
-          export DOTFILES_INTEL_PACKAGE_MANAGER
-          if [ "$PACKAGE_MANAGER" = homebrew ]; then
-            homebrew_installed || have bash || die 'bash is required to install Homebrew.'
-          fi
+          resolve_intel_package_manager
           ;;
         arm64)
           PACKAGE_MANAGER=homebrew
-          homebrew_installed || have bash || die 'bash is required to install Homebrew.'
           ;;
         *)
           die "Unsupported macOS architecture: $MACOS_ARCH"
@@ -1044,7 +1048,7 @@ install_base_links() {
 set_interactive_defaults() {
   prompt=ohmyposh
   editor=micro
-  show_fastfetch=false
+  show_fastfetch=never
   use_mise=true
   load_ssh_key=false
   show_ssh_key=false
@@ -1057,11 +1061,11 @@ collect_intel_package_manager_choice() {
 
   package_manager_default=m
   [ "$PACKAGE_MANAGER" = homebrew ] && package_manager_default=h
-  ui_menu 'Intel package manager' 'MacPorts is recommended. Homebrew on Intel is Tier 3: it has no CI support and receives no new binary bottles, so formulae may compile from source, take much longer, or fail. You can instead install Homebrew manually alongside MacPorts, mainly for casks and formulae unavailable in MacPorts; the custom dotsh-pkgmng plugin manages their coexistence.' "$package_manager_default" 'm|macports|MacPorts (recommended)
-h|homebrew|Homebrew (Tier 3; no new Intel bottles)'
+  ui_menu 'Intel package manager' "$INTEL_HOMEBREW_NOTICE" "$package_manager_default" 'm|macports|MacPorts (recommended)
+h|homebrew|Homebrew (Tier 3)'
   PACKAGE_MANAGER=$MENU_VALUE
-  DOTFILES_INTEL_PACKAGE_MANAGER=$PACKAGE_MANAGER
-  export DOTFILES_INTEL_PACKAGE_MANAGER
+  DOTSH_INTEL_PACKAGE_MANAGER=$PACKAGE_MANAGER
+  export DOTSH_INTEL_PACKAGE_MANAGER
 }
 
 ask_boolean_menu() {
@@ -1085,33 +1089,28 @@ v|vim|Vim
 n|nano|Nano'
   editor=$MENU_VALUE
 
-  ui_menu 'Fastfetch' 'Show the visual system overview when Zsh starts? The first-terminal option counts all active macOS ttys and Linux pts sessions, including SSH, IDEs, and other terminal applications.' n 'n|false|No
-y|true|Yes
-f|first|Yes, but only at the first terminal prompt'
+  ui_menu 'Fastfetch' 'Show the system overview at Zsh startup? First PTY counts active terminals across the system, including SSH and other applications. Both display modes skip detected editor or tmux shells and avoid repeating the overview in subshells.' n 'n|never|Never
+y|always|Always in eligible interactive shells
+f|first-pty|First PTY only'
   show_fastfetch=$MENU_VALUE
 
   ask_boolean_menu 'Mise' 'Install Mise and prepare its shell caches?' y
   use_mise=$MENU_VALUE
 
-  ask_boolean_menu 'SSH keys' 'Load SSH keys automatically when Zsh starts?' n
+  ask_boolean_menu 'Load SSH keys' 'Try to add supported local identities to the SSH agent at Zsh startup? Choose No to leave key loading on demand with ssh-load.' n
   load_ssh_key=$MENU_VALUE
 
-  if [ "$load_ssh_key" = true ]; then
-    ask_boolean_menu 'SSH key list' 'Show the SSH keys loaded in the agent?' y
-    show_ssh_key=$MENU_VALUE
-    ask_boolean_menu 'SSH askpass' 'Require the graphical SSH askpass helper?' n
-    askpass_require=$MENU_VALUE
-  else
-    show_ssh_key=false
-    askpass_require=false
-  fi
+  ask_boolean_menu 'Show SSH keys' 'Show the fingerprints reported by the active SSH agent at startup? This also works when startup key loading is off.' n
+  show_ssh_key=$MENU_VALUE
+
+  ask_boolean_menu 'Require SSH askpass' 'Require the configured askpass helper for SSH passphrase prompts in this shell? This sets SSH_ASKPASS_REQUIRE=force and also applies to SSH commands run later. An askpass helper must be available.' n
+  askpass_require=$MENU_VALUE
 }
 
 human_boolean() {
   case $1 in
     true) printf 'Yes' ;;
     false) printf 'No' ;;
-    first) printf 'Yes, but only at the first terminal prompt' ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -1381,7 +1380,7 @@ show_installed_tool_versions() {
   report_tool_version 'Lig' lig 1 --version
 
   case $show_fastfetch in
-    true | first)
+    always | first-pty)
       if [ "$PACKAGE_MANAGER" = macports ]; then
         report_macports_tool_version 'Fastfetch' fastfetch 1 --version
       elif [ "$PACKAGE_MANAGER" = homebrew ]; then
@@ -1419,25 +1418,20 @@ ui_summary() {
     ui_summary_line 'Base packages' "$base_packages_action"
     if [ "$PLATFORM" = macos ] && [ "$MACOS_ARCH" = x86_64 ] &&
       [ "$PACKAGE_MANAGER" = homebrew ]; then
-      ui_text 'Warning: Homebrew on Intel is Tier 3, without CI support or new binary bottles; some formulae may compile from source, take much longer, or fail.' "$COLOR_YELLOW$COLOR_BOLD"
+      ui_text "$INTEL_HOMEBREW_NOTICE" "$COLOR_YELLOW$COLOR_BOLD"
     fi
     ui_summary_line 'Mise' "$(human_boolean "$use_mise")"
     ui_line '' ''
     ui_section 'Zsh preferences'
     ui_summary_line 'Prompt' "$prompt"
     ui_summary_line 'Editor' "$editor"
-    ui_summary_line 'Fastfetch' "$(human_boolean "$show_fastfetch")"
+    ui_summary_line 'Fastfetch' "$show_fastfetch"
     ui_summary_line 'fzf integrations' "$(human_boolean "$use_fzf")"
     ui_summary_line 'fzf binary' 'Latest compatible official release (installed)'
     ui_summary_line 'Lig' 'Latest compatible GitHub release (installed)'
     ui_summary_line 'Load SSH keys' "$(human_boolean "$load_ssh_key")"
-    if [ "$load_ssh_key" = true ]; then
-      ui_summary_line 'Show SSH keys' "$(human_boolean "$show_ssh_key")"
-      ui_summary_line 'Require SSH askpass' "$(human_boolean "$askpass_require")"
-    else
-      ui_summary_line 'Show SSH keys' 'Not applicable'
-      ui_summary_line 'Require SSH askpass' 'Not applicable'
-    fi
+    ui_summary_line 'Show SSH keys' "$(human_boolean "$show_ssh_key")"
+    ui_summary_line 'Require SSH askpass' "$(human_boolean "$askpass_require")"
     ui_line '' ''
     ui_text "$(icon_label "$ICON_SUCCESS" 'No installation operation has been performed yet.')" "$COLOR_GREEN$COLOR_BOLD"
     ui_line '' ''
@@ -1580,7 +1574,7 @@ generate_zshenv() {
   mkdir -p "$(dirname "$generated_file")"
   temporary_file=$(mktemp "${generated_file}.tmp.XXXXXX") || die "Cannot create temporary Zsh environment file: $generated_file"
 
-  generated_intel_package_manager=${DOTFILES_INTEL_PACKAGE_MANAGER:-macports}
+  generated_intel_package_manager=${DOTSH_INTEL_PACKAGE_MANAGER:-${DOTFILES_INTEL_PACKAGE_MANAGER:-macports}}
   case $generated_intel_package_manager in
     macports | homebrew) ;;
     *) generated_intel_package_manager=macports ;;
@@ -1625,7 +1619,7 @@ generate_zshenv() {
       /^  \[\[ ! -o interactive \]\] \|\| umask o-w$/ { next }
       /if \[\[ \$\(uname -m\) == x86_64 \]\]; then/ { $0 = "    if [[ $CPUTYPE == x86_64 ]]; then" }
       /^  export DOTFILES_DIR=/ { $0 = "  export DOTFILES_DIR=" ENVIRON["GENERATED_DOTFILES_DIR"] }
-      /^  export DOTFILES_INTEL_PACKAGE_MANAGER=/ { $0 = "  export DOTFILES_INTEL_PACKAGE_MANAGER=" intel_package_manager; }
+      /^  export DOTSH_INTEL_PACKAGE_MANAGER=/ { $0 = "  export DOTSH_INTEL_PACKAGE_MANAGER=" intel_package_manager; }
       /^  export DOTSH_PROMPT=/ { $0 = "  export DOTSH_PROMPT=" prompt; }
       /^  export DOTSH_SHOW_FASTFETCH=/ { $0 = "  export DOTSH_SHOW_FASTFETCH=" show_fastfetch; }
       /^  export DOTSH_USE_FZF_FROM_[A-Z0-9_]+=/ { next }
@@ -1658,7 +1652,7 @@ configure_non_interactive() {
   # Keep package selection aligned with the defaults in zsh/.zshenv.init.
   prompt=ohmyposh
   editor=micro
-  show_fastfetch=first
+  show_fastfetch=first-pty
   use_mise=true
   use_fzf=true
   load_ssh_key=false
@@ -1708,11 +1702,10 @@ load_non_interactive_choices() {
   esac
 
   saved_value=$(value_from_choices DOTSH_SHOW_FASTFETCH)
-  case $saved_value in
-    '') ;;
-    true | false | first) show_fastfetch=$saved_value ;;
-    *) die "Saved DOTSH_SHOW_FASTFETCH value is invalid: $saved_value" ;;
-  esac
+  if [ -n "$saved_value" ]; then
+    show_fastfetch=$(normalize_fastfetch_mode "$saved_value") ||
+      die "Saved DOTSH_SHOW_FASTFETCH value is invalid: $saved_value"
+  fi
 
   for choice in \
     'use_mise DOTSH_USE_MISE' \
@@ -2018,7 +2011,7 @@ apply_installation() {
     success 'Mise, shell cache, and asdf compatibility layer ready'
   fi
   case $show_fastfetch in
-    true | first)
+    always | first-pty)
       info 'Installing Fastfetch'
       install_fastfetch
       success 'Fastfetch ready'
@@ -2041,10 +2034,11 @@ main() {
     info 'Starting non-interactive mode'
     check_prerequisites
     detect_platform
+    check_package_manager_prerequisites
     info "Detected platform: $PLATFORM"
     if [ "$PLATFORM" = macos ] && [ "$MACOS_ARCH" = x86_64 ] &&
       [ "$PACKAGE_MANAGER" = homebrew ]; then
-      info 'Warning: Homebrew on Intel is Tier 3, without CI support or new binary bottles. Formulae may compile from source, take much longer, or fail. MacPorts is recommended.'
+      info "$INTEL_HOMEBREW_NOTICE"
     fi
     configure_non_interactive
   else
@@ -2056,6 +2050,7 @@ main() {
     while :; do
       set_interactive_defaults
       collect_interactive_choices
+      check_package_manager_prerequisites
       inspect_installation_state
       ui_summary && break
     done

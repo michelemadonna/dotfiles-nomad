@@ -46,12 +46,7 @@ fi
 # during bundle loading, before the prompt appears.
 _dotsh_startup_ssh_open
 
-# Lig PRE Must BE HERE
-# >>> lig pre >>>
-if (( $+commands[lig] )); then
-  _cached_eval "$commands[lig]" init zsh pre
-fi
-# <<< lig pre <<<
+
 
 # Move the cursor to the bottom of the terminal before printing the prompt.
 print -n $'\e[9999;1H'

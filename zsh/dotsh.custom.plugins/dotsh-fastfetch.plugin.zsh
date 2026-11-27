@@ -1,7 +1,7 @@
 _dotsh_show_fastfetch() {
-    [[ -o interactive &&
-        ${DOTSH_SHOW_FASTFETCH:-false} != false &&
-        -z ${DOTSH_FASTFETCH_SHOWN:-} ]] || return 0
+    [[ -o interactive && -z ${DOTSH_FASTFETCH_SHOWN:-} ]] || return 0
+
+    local mode=${DOTSH_SHOW_FASTFETCH:-never}
 
     if (( ! $+commands[fastfetch] )); then
         print -u2 "fastfetch not found. See $DOTFILES_DIR/Readme.md"
@@ -10,7 +10,7 @@ _dotsh_show_fastfetch() {
 
     emulate -L zsh
 
-    local parent_cmd tty_list tty first_tty
+    local parent_cmd tty_list tty
     local -a terminals
     local -i expected_ptys=1
 
@@ -24,7 +24,7 @@ _dotsh_show_fastfetch() {
             ;;
     esac
 
-    if [[ $DOTSH_SHOW_FASTFETCH == first ]]; then
+    if [[ $mode == first-pty ]]; then
         [[ -t 0 && -n $TTY ]] || return 0
 
         # Lig allocates an additional PTY for the child shell.
