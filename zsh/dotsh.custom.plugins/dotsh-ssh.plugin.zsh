@@ -146,7 +146,4 @@ ssh-load() {
   ssh-ids
 }
 
-# On startup print the current SSH keys (disable with: zstyle ':dotsh:ssh-local' show-ids no)
-if zstyle -T ':dotsh:ssh-local' show-ids; then
-  ssh-ids
-fi
+

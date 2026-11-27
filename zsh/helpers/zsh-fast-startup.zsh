@@ -53,9 +53,9 @@ _cached_eval() {
 
 # Lig PRE Must BE HERE
 # >>> lig pre >>>
-if (( $+commands[lig] )); then
-  _cached_eval "$commands[lig]" init zsh pre
-fi
+#if (( $+commands[lig] )); then
+#  _cached_eval "$commands[lig]" init zsh pre
+#fi
 # <<< lig pre <<<
 
 # Schedule compilation of the readable Zsh source passed as $1 when its adjacent

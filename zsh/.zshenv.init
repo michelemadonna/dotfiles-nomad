@@ -12,7 +12,7 @@ if [ -n "${ZSH_VERSION-}" ]; then
   export HISTORY_IGNORE="(cd ..|l[s]#( *)#|pwd *|exit *|date *|* --help)"
   export ZSH_COMPDUMP=${ZSH_COMPDUMP:="$XDG_CACHE_HOME/zsh/.zcompdump-${HOST}-${ZSH_VERSION}"}
   
-  export DOTSH_INTEL_PACKAGE_MANAGER=${DOTSH_INTEL_PACKAGE_MANAGER:-homebrew}} #macports/homebrew
+  export DOTSH_INTEL_PACKAGE_MANAGER=${DOTSH_INTEL_PACKAGE_MANAGER:-homebrew} #macports/homebrew
   export DOTSH_MISE_REFRESH_SECONDS=${DOTSH_MISE_REFRESH_SECONDS:=5} #0 checks every prompt
   export DOTSH_USE_MISE=${DOTSH_USE_MISE:=true} #true/false
   export DOTSH_OH_MY_POSH_CONFIG="$DOTFILES_DIR/oh-my-posh/custom.omp.json"

@@ -30,6 +30,14 @@ builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
 # Oh My Zsh ssh-agent plugin is sourced from the Antidote bundle.
 zstyle :omz:plugins:ssh-agent honor-existing yes
 if [[ ${DOTSH_SSH_LOAD_KEY:-false} == true ]]; then
+  local key header
+  local -a identities
+  for key in ~/.ssh/*(N.); do
+    IFS= read -r header < "$key" || continue
+    [[ $header == '-----BEGIN '*PRIVATE\ KEY----- ]] &&
+      identities+=("$key")
+  done
+  zstyle ':omz:plugins:ssh-agent' identities "${identities[@]}"
   zstyle :omz:plugins:ssh-agent lazy no
 else
   zstyle :omz:plugins:ssh-agent lazy yes
@@ -42,8 +50,7 @@ else
 fi
 [[ ${DOTSH_SSH_ASKPASS_REQUIRE:-false} != true ]] || export SSH_ASKPASS_REQUIRE=force
 
-# Start the inherited SSH agent query early. The SSH plugin prints its result
-# during bundle loading, before the prompt appears.
+# Start the inherited SSH agent query early so the startup summary can reuse it.
 _dotsh_startup_ssh_open
 
 
@@ -127,12 +134,13 @@ zstyle ':antidote:bundle:*' defer-options '-m'
 zstyle ':antidote:static' file "$ZSH_CACHE_DIR/antidote-bundle-no-precmd.zsh"
 typeset -g ZSH_AUTOSUGGEST_MANUAL_REBIND=1
 antidote load
-
-_dotsh_startup_ssh_close
-
+if [[ -o interactive && -t 1 ]]; then
+    zmodload zsh/terminfo
+    echoti cup $(( LINES - 1 )) 0
+fi
 # Use Zsh prompt escapes for the current time and terminal without starting external commands.
-[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
-print -r
+#[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
+#print -r
 
 
 _dotsh_use_warm_compdump
@@ -146,9 +154,7 @@ if [[ ! -o zle || ! -t 0 || -v ZSH_EXECUTION_STRING ]]; then
 fi
 
 # Older generated .zshenv files may still use the boolean prompt setting.
-if [[ ${DOTSH_PROMPT:-} == ohmyposh ||
-      ( -z ${DOTSH_PROMPT:-} && ${DOTSH_USE_OH_MY_POSH:-false} == true ) ]] &&
-   (( $+commands[oh-my-posh] )); then
+if [[ ${DOTSH_PROMPT:-} == ohmyposh ]] && (( $+commands[oh-my-posh] )); then
   local omp_plugin="$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-oh-my-posh.plugin.zsh"
   if [[ -f $DOTSH_OH_MY_POSH_CONFIG ]]; then
     if [[ -r $omp_plugin ]] &&
@@ -252,9 +258,9 @@ fi
 
 #LIG POST Must BE HERE
 # >>> lig post >>>
-if (( $+commands[lig] && $+functions[zsh-defer] )); then
-  zsh-defer -m -p _cached_eval "$commands[lig]" init zsh post
-fi
+#if (( $+commands[lig] && $+functions[zsh-defer] )); then
+#  zsh-defer -m -p _cached_eval "$commands[lig]" init zsh post
+#fi
 # <<< lig post <<<
 # Autosuggestions otherwise waits for the next real precmd to bind widgets.
 # Its dependencies and Lig's widget hooks have run when this task executes.
@@ -265,4 +271,13 @@ fi
 ## >>> lig post >>>
 ## zsh-defer -m -p -c _lig_load_init post
 ## <<< lig post <<<
-
+# On startup print the current SSH keys (disable with: zstyle ':dotsh:ssh-local' show-ids no)
+if zstyle -T ':dotsh:ssh-local' show-ids; then
+  ssh-ids
+  print
+fi
+_dotsh_startup_ssh_close
+if [[ -o interactive && -t 1 ]]; then
+    zmodload zsh/terminfo
+    echoti cup $(( LINES - 1 )) 0
+fi
