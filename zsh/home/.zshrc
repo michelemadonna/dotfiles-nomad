@@ -1,3 +1,6 @@
+# >>> lig pre >>>
+#eval "$("/Users/michele/.local/bin/lig" init zsh pre)"
+# <<< lig pre <<<
 # Interactive Zsh startup. Load the helpers and query SSH first, then prepare
 # the cache, search paths, and plugin styles before loading the Antidote bundle.
 # Zephyr initializes completions before the first prompt. The editor finishes
@@ -5,6 +8,12 @@
 
 # Remove write permission for other users on files created by interactive
 # shells. Load zprof early when its marker file exists to measure startup.
+if [[ -o interactive && -t 1 ]]; then
+    zmodload zsh/terminfo
+    echoti cup $(( LINES - 1 )) 0
+fi
+
+
 [[ ! -o interactive ]] || umask o-w
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zmodload zsh/zprof
@@ -53,10 +62,8 @@ fi
 # Start the inherited SSH agent query early so the startup summary can reuse it.
 _dotsh_startup_ssh_open
 
-
-
-# Move the cursor to the bottom of the terminal before printing the prompt.
-print -n $'\e[9999;1H'
+## Move the cursor to the bottom of the terminal before printing the prompt.
+#print -n $'\e[9999;1H'
 
 _dotsh_init_startup_cache
 builtin source "$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-misc.plugin.zsh"
@@ -134,14 +141,14 @@ zstyle ':antidote:bundle:*' defer-options '-m'
 zstyle ':antidote:static' file "$ZSH_CACHE_DIR/antidote-bundle-no-precmd.zsh"
 typeset -g ZSH_AUTOSUGGEST_MANUAL_REBIND=1
 antidote load
-if [[ -o interactive && -t 1 ]]; then
-    zmodload zsh/terminfo
-    echoti cup $(( LINES - 1 )) 0
-fi
+#if [[ -o interactive && -t 1 ]]; then
+#    zmodload zsh/terminfo
+#    echoti cup $(( LINES - 1 )) 0
+#fi
+
 # Use Zsh prompt escapes for the current time and terminal without starting external commands.
 #[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
 #print -r
-
 
 _dotsh_use_warm_compdump
 _dotsh_compile_bundle_plugins
@@ -242,25 +249,17 @@ TIMEFMT="%U user %S system %P cpu %*Es total"
 
 
 
-if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
-  zprof
+# On startup print the current SSH keys (disable with: zstyle ':dotsh:ssh-local' show-ids no)
+if zstyle -T ':dotsh:ssh-local' show-ids; then
+  ssh-ids
+  print
 fi
 
 
-## >>> lig post >>>
-#if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
-#      -n ${LIG_TTY-} && "$LIG_TTY" == "$TTY" ]] && (( $+commands[lig] )); then
-#  source "$DOTFILES_DIR/zsh/helpers/lig-init.zsh"
-#  # Antidote queues autosuggestions and highlighting before Lig's ZLE hooks.
-#  zsh-defer -m -p _dotsh_lig_finish_init
-#fi
-## <<< lig post <<<
+_dotsh_startup_ssh_close
 
-#LIG POST Must BE HERE
 # >>> lig post >>>
-#if (( $+commands[lig] && $+functions[zsh-defer] )); then
-#  zsh-defer -m -p _cached_eval "$commands[lig]" init zsh post
-#fi
+#eval "$("/Users/michele/.local/bin/lig" init zsh post)"
 # <<< lig post <<<
 # Autosuggestions otherwise waits for the next real precmd to bind widgets.
 # Its dependencies and Lig's widget hooks have run when this task executes.
@@ -268,16 +267,18 @@ if (( $+functions[zsh-defer] )); then
   zsh-defer -m -p -c '(( ! $+functions[_zsh_autosuggest_start] )) || _zsh_autosuggest_start'
 fi
 
-## >>> lig post >>>
-## zsh-defer -m -p -c _lig_load_init post
-## <<< lig post <<<
-# On startup print the current SSH keys (disable with: zstyle ':dotsh:ssh-local' show-ids no)
-if zstyle -T ':dotsh:ssh-local' show-ids; then
-  ssh-ids
-  print
+if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
+  zprof
 fi
-_dotsh_startup_ssh_close
-if [[ -o interactive && -t 1 ]]; then
-    zmodload zsh/terminfo
-    echoti cup $(( LINES - 1 )) 0
+#LIG POST Must BE HERE
+# >>> ligss post >>>
+if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
+      -n ${LIG_TTY-} && "$LIG_TTY" == "$TTY" ]] && (( $+commands[lig] && $+functions[zsh-defer] )); then
+  # Antidote queues autosuggestions and highlighting before Lig's ZLE hooks.
+  zsh-defer -m -p _cached_eval "$commands[lig]" init zsh post
 fi
+# <<< ligss post <<<
+
+
+
+

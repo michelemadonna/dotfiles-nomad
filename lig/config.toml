@@ -15,7 +15,7 @@ theme = "terminal"
 [keys]
 accept = ["enter"]
 next = [
-	"tab",
+    "tab",
     "down",
     "ctrl-n",
 ]
@@ -27,74 +27,11 @@ prev = [
 dismiss = ["esc"]
 toggle = ["ctrl-space"]
 history = ["ctrl-r"]
-
-[preview]
-enabled = true
-start_hidden = false
-auto_open_delay_ms = 1000
-animation = "fade"
-layout = "inline"
-position = "auto"
-width = "auto"
-height = "auto"
-min_width = 28
-min_height = 5
-margin = 1
-adaptive_size = true
-max_lines = 200
-scroll_step = 3
-max_bytes = 262144
-timeout_ms = 2000
-cache_entries = 16
-line_numbers = true
-syntax_highlighting = true
-preserve_prompt = true
-mouse = true
-show_title = true
-image_protocol = "auto"
-
-[preview.keys]
-toggle = "alt-p"
-toggle_layout = "alt-f"
-resize_floating = "alt-z"
-open = ""
-close = ""
-up = "alt-up"
-down = "alt-down"
-page_up = "page-up"
-page_down = "page-down"
-
-[preview.text]
-backend = "native"
-fallback = "native"
-output = "ansi"
-
-[preview.image]
-backend = "native"
-fallback = "native"
-output = "ansi"
-
-[preview.archive]
-backend = "native"
-fallback = "native"
-output = "ansi"
-
-[preview.media]
-backend = "native"
-fallback = "native"
-output = "ansi"
-
-[preview.directory]
-backend = "native"
-fallback = "native"
-output = "ansi"
-
-[preview.rules]
-
+folder_history = ["alt-r"]
+accept_and_run = ["shift-enter"]
 
 [behavior]
 fuzzy = true
-#toggle_only = false
 enter_accepts = "auto"
 enter_runs_commands = []
 insert_space = false
@@ -169,6 +106,8 @@ files_first_commands = [
     "totem",
     "celluloid",
 ]
+show_hidden_files = false
+hide_variable_values = []
 options_after_dash = [
     "ls",
     "eza",
@@ -184,8 +123,10 @@ options_after_dash = [
 ]
 show_on_empty_token = true
 complete_commands = false
+toggle_only = true
 online = true
 history = true
+history_success_only = false
 generator_timeout_ms = 5000
 generator_cache_ms = 5000
 disabled_commands = []
@@ -193,6 +134,71 @@ completers = ["shell"]
 help_parsing = true
 help_timeout_ms = 2000
 help_skip = []
+
+[preview]
+enabled = true
+show_on = "on_hover"
+on_hover_open_delay = 500
+animation = "fade"
+animation_duration_ms = 300
+layout = "floating"
+max_width = "auto"
+max_height = "auto"
+min_width = 28
+min_height = 5
+screen_margin = 0
+margin = 10
+adaptive_size = true
+scroll_step = 3
+max_bytes = 262144
+timeout_ms = 2000
+cache_entries = 16
+preserve_prompt = true
+mouse = true
+show_title = true
+
+[preview.keys]
+toggle = "alt-p"
+toggle_layout = "alt-f"
+resize_floating = "alt-z"
+open = ""
+close = ""
+up = "alt-up"
+down = "alt-down"
+page_up = "page-up"
+page_down = "page-down"
+
+[preview.text]
+backend = "native"
+fallback = "native"
+output = "ansi"
+max_lines = 200
+
+[preview.image]
+backend = "native"
+fallback = "native"
+output = "ansi"
+max_lines = 200
+
+[preview.archive]
+backend = "native"
+fallback = "native"
+output = "ansi"
+max_lines = 200
+
+[preview.media]
+backend = "native"
+fallback = "native"
+output = "ansi"
+max_lines = 200
+
+[preview.directory]
+backend = "native"
+fallback = "native"
+output = "ansi"
+max_lines = 200
+
+[preview.rules]
 
 # [colors] changes any of the theme's: "#rrggbb", a 256-color number, or "default".
 # [colors]

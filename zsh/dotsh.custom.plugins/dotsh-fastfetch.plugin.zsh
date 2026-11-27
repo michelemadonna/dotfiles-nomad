@@ -55,7 +55,8 @@ _dotsh_show_fastfetch() {
         
             (( ${#terminals} <= expected_ptys )) || return 0
         fi
-        
+        print
+        print
         fastfetch --pipe false && export DOTSH_FASTFETCH_SHOWN=1
     fi
 
