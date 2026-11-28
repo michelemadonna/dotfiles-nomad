@@ -34,20 +34,73 @@ asdf() {
 # Keep the native Mise activation function available before the deferred
 # completion setup, so the command wrapper works even if typed immediately.
 if (( $+functions[mise] )); then
-  functions[mise_orig]=$functions[mise]
+  functions -c mise mise_orig
 fi
+
+_dotsh_mise_clear_completion_cache() {
+  unset _DOTSH_MISE_COMPLETION_CONTEXT _DOTSH_MISE_COMPLETION_PREFIX
+  unset _DOTSH_MISE_COMPLETION_ROWS _DOTSH_MISE_COMPLETION_UNTIL
+}
+
+# Reuse top-level usage rows while the user narrows a command or task name.
+# Flags, arguments, and fallbacks such as file completion still query Mise.
+_dotsh_mise_query_completion() {
+  emulate -L zsh
+  setopt extended_glob
+  local input=$1 prefix=${1#mise } context row
+  local -a matches
+  _dotsh_mise_completion_rows=''
+
+  if [[ $input == 'mise '(|[[:alnum:]_][[:alnum:]_-]#) ]]; then
+    context="$PWD"$'\n'"${commands[mise]}"
+    if [[ $context == "${_DOTSH_MISE_COMPLETION_CONTEXT:-}" &&
+          $prefix == "${_DOTSH_MISE_COMPLETION_PREFIX:-}"* ]] &&
+       (( EPOCHREALTIME < ${_DOTSH_MISE_COMPLETION_UNTIL:-0} )); then
+      for row in "${(@f)_DOTSH_MISE_COMPLETION_ROWS}"; do
+        [[ ${row%%$'\t'*} == "$prefix"* ]] && matches+=("$row")
+      done
+      if (( $#matches )); then
+        _dotsh_mise_completion_rows=${(F)matches}
+        return 0
+      fi
+    fi
+  fi
+
+  _dotsh_mise_completion_rows=$(command 'mise' __complete_word__ --shell zsh --line "$input" 2>/dev/null) ||
+    return 0
+  if [[ -n $context && -n $_dotsh_mise_completion_rows &&
+        $_dotsh_mise_completion_rows != *$'\001'* ]]; then
+    typeset -g _DOTSH_MISE_COMPLETION_CONTEXT=$context _DOTSH_MISE_COMPLETION_PREFIX=$prefix
+    typeset -g _DOTSH_MISE_COMPLETION_ROWS=$_dotsh_mise_completion_rows
+    typeset -gF _DOTSH_MISE_COMPLETION_UNTIL=$(( EPOCHREALTIME + 5 ))
+  fi
+}
 
 # The current Lig hook uses a local variable named display, which shadows the
 # generated completion's display array when Lig resolves the -d argument.
-_dotsh_mise_rename_display_array() {
+_dotsh_mise_adapt_native_completion() {
   emulate -L zsh
   local body=$functions[_mise]
+  local query=$'command \'mise\' __complete_word__ --shell zsh \\\n        --line "$__usage_input" 2>/dev/null'
+  local read_rows='while IFS= read -r __usage_line'
   [[ $body == *'local -a display=()'* && $body == *$'\tdisplay+=('* &&
      $body == *'compadd -l -d display -U -Q -S'* ]] || return 0
 
   body=${body//'local -a display=()'/'local -a _dotsh_mise_display=()'}
   body=${body//$'\tdisplay+=('/$'\t_dotsh_mise_display+=('}
-  functions[_mise]=${body//'compadd -l -d display -U -Q -S'/'compadd -l -d _dotsh_mise_display -U -Q -S'}
+  body=${body//'compadd -l -d display -U -Q -S'/'compadd -l -d _dotsh_mise_display -U -Q -S'}
+
+  if [[ $body == *"done < <($query)"* && $body == *"$read_rows"* ]] &&
+     zmodload zsh/datetime; then
+    # Populate the cache in this shell before the loop consumes the protocol.
+    local collect_rows=$'local _dotsh_mise_completion_rows\n\t'
+    collect_rows+=$'_dotsh_mise_query_completion "$__usage_input"\n\t'
+    body=${body/"$read_rows"/"$collect_rows$read_rows"}
+    body=${body/"done < <($query)"/'done <<< "$_dotsh_mise_completion_rows"'}
+    autoload -Uz add-zsh-hook
+    add-zsh-hook preexec _dotsh_mise_clear_completion_cache
+  fi
+  functions[_mise]=$body
 }
 
 _dotsh_mise_init_completion() {
@@ -288,34 +341,46 @@ _dotsh_mise_init_completion() {
   _dotsh_mise_prepare_completion_cache "$mise_command" "$mise_completion_file"
 
   typeset -g -A _comps
-  if [[ -s $mise_completion_file ]]; then
-    source "$mise_completion_file"
-    _dotsh_mise_rename_display_array
-    functions[_mise_orig]=$functions[_mise]
-  else
-    autoload -Uz _$mise_command
+  # Wait to source and adapt the generated Mise function until it is requested.
+  if [[ $mise_command != mise ]]; then
+    if [[ -s $mise_completion_file ]]; then
+      builtin source "$mise_completion_file"
+    else
+      autoload -Uz _$mise_command
+    fi
   fi
   _comps[$mise_command]=_$mise_command
 
-  functions[_mise]=$functions[_dotsh_mise_completion]
+  functions -c _dotsh_mise_completion _mise
 }
 
 # Wrap mise to update .tool-versions on `mise use`; preserve its native completion
 # for all subcommands outside the custom `mise use` version selector.
 _dotsh_mise_native_completion() {
   if (( ! $+functions[_mise_orig] )); then
+    local mise_command=${_DOTSH_MISE_COMMAND:-mise}
+    local mise_completion_file="$ZSH_CACHE_DIR/completions/_$mise_command"
+    if [[ -s $mise_completion_file ]] && builtin source "$mise_completion_file" &&
+       [[ $functions[_mise] != $functions[_dotsh_mise_completion] ]]; then
+      _dotsh_mise_adapt_native_completion
+      functions -c _mise _mise_orig
+      functions -c _dotsh_mise_completion _mise
+      _mise_orig "$@"
+      return $?
+    fi
+
     # Adapt the autoload body before its first completion, then capture the
     # function it defines and restore the wrapper.
     unfunction _mise 2>/dev/null
     autoload -Uz _mise
     if autoload +X _mise; then
-      _dotsh_mise_rename_display_array
+      _dotsh_mise_adapt_native_completion
     fi
     _mise "$@"
     local completion_status=$?
-    _dotsh_mise_rename_display_array
-    functions[_mise_orig]=$functions[_mise]
-    functions[_mise]=$functions[_dotsh_mise_completion]
+    _dotsh_mise_adapt_native_completion
+    functions -c _mise _mise_orig
+    functions -c _dotsh_mise_completion _mise
     return $completion_status
   fi
 
