@@ -12,8 +12,10 @@
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zmodload zsh/zprof
 fi
+# Use Zsh prompt escapes for the current time and terminal without starting external commands.
+#[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
+#print -r
 if [[ -o interactive && -t 1 ]]; then
-    
     echoti cup $(( LINES - 1 )) 0
 fi
 # Shared cache root for Mise, completions and other Zsh plugins.
@@ -31,6 +33,18 @@ zstyle ':zephyr:plugin:completion' use-cache yes
 zstyle ':zephyr:plugin:color' use-cache yes
 
 builtin source "$DOTFILES_DIR/zsh/helpers/zsh-fast-startup.zsh"
+
+# Start Oh My Posh in parallel with shell initialization.
+if [[ ${DOTSH_PROMPT:-} == ohmyposh ]] &&
+   (( $+commands[oh-my-posh] )); then
+
+    local omp_plugin="$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-oh-my-posh.plugin.zsh"
+
+    if [[ -r $omp_plugin && -f $DOTSH_OH_MY_POSH_CONFIG ]]; then
+        builtin source "$omp_plugin"
+        _dotsh_startup_omp_open
+    fi
+fi
 
 # Configure SSH behavior before the asynchronous startup query and before the
 # Oh My Zsh ssh-agent plugin is sourced from the Antidote bundle.
@@ -138,14 +152,8 @@ zstyle ':antidote:bundle:*' defer-options '-m'
 zstyle ':antidote:static' file "$ZSH_CACHE_DIR/antidote-bundle-no-precmd.zsh"
 typeset -g ZSH_AUTOSUGGEST_MANUAL_REBIND=1
 antidote load
-#if [[ -o interactive && -t 1 ]]; then
-#    zmodload zsh/terminfo
-#    echoti cup $(( LINES - 1 )) 0
-#fi
 
-# Use Zsh prompt escapes for the current time and terminal without starting external commands.
-#[[ -t 0 ]] && LC_ALL=C builtin print -rP -- 'Last login: %D{%a %b %e %H:%M:%S} on %y'
-#print -r
+
 
 _dotsh_use_warm_compdump
 _dotsh_compile_bundle_plugins
@@ -157,24 +165,22 @@ if [[ ! -o zle || ! -t 0 || -v ZSH_EXECUTION_STRING ]]; then
   _dotsh_init_colors
 fi
 
-# Older generated .zshenv files may still use the boolean prompt setting.
-if [[ ${DOTSH_PROMPT:-} == ohmyposh ]] && (( $+commands[oh-my-posh] )); then
-  local omp_plugin="$DOTFILES_DIR/zsh/dotsh.custom.plugins/dotsh-oh-my-posh.plugin.zsh"
-  if [[ -f $DOTSH_OH_MY_POSH_CONFIG ]]; then
-    if [[ -r $omp_plugin ]] &&
-       builtin source "$omp_plugin" &&
-       (( $+functions[dotsh-init-oh-my-posh] )); then
+# Initialize the selected prompt.
+if [[ ${DOTSH_PROMPT:-} == ohmyposh ]] &&
+   (( $+commands[oh-my-posh] )); then
 
-      dotsh-init-oh-my-posh
+    if [[ -f $DOTSH_OH_MY_POSH_CONFIG ]]; then
+        if (( $+functions[dotsh-init-oh-my-posh] )); then
+            dotsh-init-oh-my-posh
+        else
+            eval "$(command oh-my-posh init zsh \
+                --config "$DOTSH_OH_MY_POSH_CONFIG")"
+        fi
     else
-      eval "$(command oh-my-posh init zsh --config "$DOTSH_OH_MY_POSH_CONFIG")"
+        eval "$(command oh-my-posh init zsh)"
     fi
-  else
-    eval "$(command oh-my-posh init zsh)"
-  fi
 else
-  #TODO improve with git_status and git_prompt_info
-  PROMPT='%F{cyan}%n@%m%f %F{blue}%~%f %# '
+    PROMPT='%F{cyan}%n@%m%f %F{blue}%~%f %# '
 fi
 
 # Clear the completion list shown before menu selection starts. The redraw
@@ -277,9 +283,6 @@ if (( $+functions[zsh-defer] )); then
   zsh-defer -m -p -c '(( ! $+functions[_zsh_autosuggest_start] )) || _zsh_autosuggest_start'
 fi
 
-if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
-  zprof
-fi
 
 # Lig uses its cwd report to mark the start of the prompt for floating previews.
 # Send it before the first prompt. Lig's own precmd handles subsequent prompts.
@@ -293,6 +296,8 @@ if [[ -o interactive && ! -v ZSH_EXECUTION_STRING && -z ${LIG_DISABLE-} &&
   add-zsh-hook precmd _dotsh_lig_first_prompt
 fi
 
-
+if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
+  zprof
+fi
 
 
