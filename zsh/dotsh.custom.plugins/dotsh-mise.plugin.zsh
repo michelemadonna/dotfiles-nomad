@@ -37,6 +37,19 @@ if (( $+functions[mise] )); then
   functions[mise_orig]=$functions[mise]
 fi
 
+# The current Lig hook uses a local variable named display, which shadows the
+# generated completion's display array when Lig resolves the -d argument.
+_dotsh_mise_rename_display_array() {
+  emulate -L zsh
+  local body=$functions[_mise]
+  [[ $body == *'local -a display=()'* && $body == *$'\tdisplay+=('* &&
+     $body == *'compadd -l -d display -U -Q -S'* ]] || return 0
+
+  body=${body//'local -a display=()'/'local -a _dotsh_mise_display=()'}
+  body=${body//$'\tdisplay+=('/$'\t_dotsh_mise_display+=('}
+  functions[_mise]=${body//'compadd -l -d display -U -Q -S'/'compadd -l -d _dotsh_mise_display -U -Q -S'}
+}
+
 _dotsh_mise_init_completion() {
   emulate -L zsh
   if (( $+functions[_dotsh_mise_external_versions] )) &&
@@ -277,6 +290,7 @@ _dotsh_mise_init_completion() {
   typeset -g -A _comps
   if [[ -s $mise_completion_file ]]; then
     source "$mise_completion_file"
+    _dotsh_mise_rename_display_array
     functions[_mise_orig]=$functions[_mise]
   else
     autoload -Uz _$mise_command
@@ -290,12 +304,16 @@ _dotsh_mise_init_completion() {
 # for all subcommands outside the custom `mise use` version selector.
 _dotsh_mise_native_completion() {
   if (( ! $+functions[_mise_orig] )); then
-    # Fallback for a missing/unwritable cache: invoke the autoload trampoline in
-    # the real completion context, capture it, then restore this wrapper.
+    # Adapt the autoload body before its first completion, then capture the
+    # function it defines and restore the wrapper.
     unfunction _mise 2>/dev/null
     autoload -Uz _mise
+    if autoload +X _mise; then
+      _dotsh_mise_rename_display_array
+    fi
     _mise "$@"
     local completion_status=$?
+    _dotsh_mise_rename_display_array
     functions[_mise_orig]=$functions[_mise]
     functions[_mise]=$functions[_dotsh_mise_completion]
     return $completion_status

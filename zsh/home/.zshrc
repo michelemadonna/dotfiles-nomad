@@ -12,7 +12,10 @@
 if [[ -f ${HOME}/.dotsh-zprof-enabled ]]; then
   zmodload zsh/zprof
 fi
-
+if [[ -o interactive && -t 1 ]]; then
+    
+    echoti cup $(( LINES - 1 )) 0
+fi
 # Shared cache root for Mise, completions and other Zsh plugins.
 typeset -g ZSH_CACHE_DIR="${ZSH_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zsh}"
 typeset -g ZSH_COMP_CACHE_DIR="${ZSH_CACHE_DIR}/completions"
@@ -161,6 +164,7 @@ if [[ ${DOTSH_PROMPT:-} == ohmyposh ]] && (( $+commands[oh-my-posh] )); then
     if [[ -r $omp_plugin ]] &&
        builtin source "$omp_plugin" &&
        (( $+functions[dotsh-init-oh-my-posh] )); then
+
       dotsh-init-oh-my-posh
     else
       eval "$(command oh-my-posh init zsh --config "$DOTSH_OH_MY_POSH_CONFIG")"
@@ -253,7 +257,7 @@ unsetopt CORRECT CORRECT_ALL
 REPORTTIME=${REPORTTIME:-2}
 TIMEFMT="%U user %S system %P cpu %*Es total"
 
-
+#qui funziona bene senza ff
 if [[ -o interactive && -t 1 ]]; then
     
     echoti cup $(( LINES - 1 )) 0

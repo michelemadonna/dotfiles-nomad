@@ -75,8 +75,8 @@ overview in eligible interactive shells, `first-pty` to also require the first
 active terminal, or `never` to skip the overview and its optional installation.
 Both display modes retain the filters for detected editor and tmux shells and
 skip shells that inherit a marker from a previous display. The first-PTY check
-counts active terminals across the system, including SSH and other terminal
-applications, and accounts for Lig's extra PTY. The wizard defaults to `never`
+counts only the sessions belonging to the terminal process that started the
+shell. A session wrapped by Lig counts once. The wizard defaults to `never`
 and a fresh non-interactive install defaults to `first-pty`. Existing
 `true`, `first`, and `false` values map to the corresponding new modes.
 
